@@ -4,6 +4,17 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/JesseHug/flux/releases)。
 
+## 3.5.9
+
+2026-11-19
+
+- **Reality 防偷跑流量（Strict SNI 保护）**：在入站配置中新增防偷跑流量开关。开启后未认证探测或非法 SNI 连接回落至本机隔离端口并嗅探 TLS SNI，仅对允许的白名单域名放行直连目标站点，其余非法流量一律黑洞阻断，彻底解决 VPS 共享 CDN 节点被第三方借用偷跑流量的问题
+- **双核心原生适配与现代语法兼容**：
+  - **Xray**：使用 `dokodemo-door` 伴生入站结合 `sniffing.destOverride: ["tls"]` 与路由规则黑洞丢弃非法 SNI
+  - **Sing-box (1.14+)**：适配 1.13+ 废除入站 `sniff` 后的现代规则语法，使用伴生 `direct` 监听 + `action: "sniff"` 嗅探 + `block` 黑洞出站
+- **新增伪装域名推荐池**：默认伪装域名替换为更稳定合规的镜像站点（默认 `dl-cdn.alpinelinux.org`），入站弹窗提供 9 个精选开源镜像大站（Alpine、Debian、Rust crates、Python PyPI、RubyGems、Mozilla、Homebrew、Rust-lang、CPAN）轻量标签，支持一键点击填入并自动联动目标端口
+- **升级**：只需升级面板
+
 ## 3.5.8
 
 2026-11-12

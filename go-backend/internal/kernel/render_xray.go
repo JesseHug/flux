@@ -2,6 +2,8 @@ package kernel
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 )
 
@@ -9,12 +11,21 @@ type obj = map[string]interface{}
 
 func renderXray(inbounds []Inbound) (string, error) {
 	list := make([]interface{}, 0, len(inbounds))
+	var fallbackRules []interface{}
 	for _, in := range inbounds {
 		item, err := xrayInbound(in)
 		if err != nil {
 			return "", fmt.Errorf("入站 %d: %v", in.ID, err)
 		}
 		list = append(list, item)
+		if in.Security.Type == SecurityReality && in.Security.RealityNoSteal && in.Security.RealityFallbackPort > 0 {
+			fbItem, fbRules, err := xrayRealityFallback(in)
+			if err != nil {
+				return "", fmt.Errorf("入站 %d: %v", in.ID, err)
+			}
+			list = append(list, fbItem)
+			fallbackRules = append(fallbackRules, fbRules...)
+		}
 	}
 	cfg := obj{
 		"log":      obj{"loglevel": "warning"},
@@ -29,6 +40,9 @@ func renderXray(inbounds []Inbound) (string, error) {
 	chained, rules, err := xrayChainRoutes(inbounds)
 	if err != nil {
 		return "", err
+	}
+	if len(fallbackRules) > 0 {
+		rules = append(fallbackRules, rules...)
 	}
 	outbounds := append(cfg["outbounds"].([]interface{}), chained...)
 	// Each user leaves through a direct outbound whose sockets carry the
@@ -150,11 +164,19 @@ func xrayStream(in Inbound) obj {
 		}
 		stream["tlsSettings"] = tls
 	case SecurityReality:
+		dest := sec.RealityDest
+		serverNames := []string{sec.SNI}
+		if sec.RealityNoSteal && sec.RealityFallbackPort > 0 {
+			dest = fmt.Sprintf("127.0.0.1:%d", sec.RealityFallbackPort)
+			if len(sec.RealityServerNames) > 0 {
+				serverNames = sec.RealityServerNames
+			}
+		}
 		stream["realitySettings"] = obj{
 			"show":        false,
-			"dest":        sec.RealityDest,
+			"dest":        dest,
 			"xver":        0,
-			"serverNames": []string{sec.SNI},
+			"serverNames": serverNames,
 			"privateKey":  sec.RealityPrivateKey,
 			"shortIds":    sec.RealityShortIDs,
 		}
@@ -166,6 +188,50 @@ func xrayStream(in Inbound) obj {
 		stream["realitySettings"].(obj)["minClientVer"] = minVer
 	}
 	return stream
+}
+
+func xrayRealityFallback(in Inbound) (obj, []interface{}, error) {
+	sec := in.Security
+	host, portStr, err := net.SplitHostPort(sec.RealityDest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("Reality 目标地址错误: %v", err)
+	}
+	port, _ := strconv.Atoi(portStr)
+	fallbackTag := in.Tag() + "-fallback"
+	item := obj{
+		"tag":      fallbackTag,
+		"listen":   "127.0.0.1",
+		"port":     sec.RealityFallbackPort,
+		"protocol": "dokodemo-door",
+		"settings": obj{
+			"address": host,
+			"port":    port,
+			"network": "tcp",
+		},
+		"sniffing": obj{
+			"enabled":      true,
+			"destOverride": []string{"tls"},
+			"routeOnly":    true,
+		},
+	}
+	names := sec.RealityServerNames
+	if len(names) == 0 && sec.SNI != "" {
+		names = []string{sec.SNI}
+	}
+	rules := []interface{}{
+		obj{
+			"type":        "field",
+			"inboundTag":  []string{fallbackTag},
+			"domain":      names,
+			"outboundTag": "direct",
+		},
+		obj{
+			"type":        "field",
+			"inboundTag":  []string{fallbackTag},
+			"outboundTag": "block",
+		},
+	}
+	return item, rules, nil
 }
 
 // pemLines splits a PEM block into the line array form Xray accepts inline.

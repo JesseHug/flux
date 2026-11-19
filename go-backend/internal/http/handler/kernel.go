@@ -225,10 +225,11 @@ func (h *Handler) kernelCapabilities(w http.ResponseWriter, r *http.Request) {
 		"kernels":   kernel.Catalog(),
 		"ssMethods": kernel.SSMethods(),
 		"defaults": map[string]interface{}{
-			"realitySni":  kernel.DefaultRealitySNI,
-			"fingerprint": kernel.DefaultFingerprint,
-			"ssMethod":    kernel.DefaultSSMethod,
-			"flow":        kernel.FlowVision,
+			"realitySni":                kernel.DefaultRealitySNI,
+			"realityRecommendedDomains": kernel.RealityRecommendedDomains,
+			"fingerprint":               kernel.DefaultFingerprint,
+			"ssMethod":                  kernel.DefaultSSMethod,
+			"flow":                      kernel.FlowVision,
 		},
 		"splitCategories": kernel.SplitCategories,
 	}))

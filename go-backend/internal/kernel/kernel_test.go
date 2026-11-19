@@ -360,7 +360,7 @@ func assertGolden(t *testing.T, name, got string) {
 	if err != nil {
 		t.Fatalf("read golden (run with -update): %v", err)
 	}
-	if string(want) != got {
+	if strings.ReplaceAll(string(want), "\r\n", "\n") != strings.ReplaceAll(got, "\r\n", "\n") {
 		t.Fatalf("%s mismatch:\n--- got ---\n%s", name, got)
 	}
 }

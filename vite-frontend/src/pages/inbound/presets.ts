@@ -55,6 +55,18 @@ export const ACME_DNS_LABELS: Record<string, string> = {
   alidns: "阿里云 DNS",
 };
 
+export const REALITY_RECOMMENDED_DOMAINS = [
+  "dl-cdn.alpinelinux.org",
+  "deb.debian.org",
+  "crates.io",
+  "pypi.org",
+  "rubygems.org",
+  "addons.mozilla.org",
+  "formulae.brew.sh",
+  "static.rust-lang.org",
+  "cpan.org",
+] as const;
+
 export const KERNEL_STATUS: Record<
   string,
   { label: string; color: "success" | "warning" | "danger" | "default" }
@@ -115,6 +127,8 @@ export interface InboundForm {
   realityPrivateKey: string;
   realityShortIds: string;
   realityMinClientVer: string;
+  realityNoSteal: boolean;
+  realityServerNames: string;
   shadowTlsPassword: string;
   acmeEmail: string;
   acmeDns: string;
@@ -362,6 +376,8 @@ export function emptyForm(
     realityPrivateKey: "",
     realityShortIds: "",
     realityMinClientVer: "",
+    realityNoSteal: false,
+    realityServerNames: "",
     shadowTlsPassword: "",
     acmeEmail: "",
     acmeDns: "",
@@ -468,6 +484,8 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     realityPrivateKey: item.security.realityPrivateKey ?? "",
     realityShortIds: (item.security.realityShortIds ?? []).join(","),
     realityMinClientVer: item.security.realityMinClientVer ?? "",
+    realityNoSteal: Boolean(item.security.realityNoSteal),
+    realityServerNames: (item.security.realityServerNames ?? []).join(", "),
     shadowTlsPassword: item.security.shadowTlsPassword ?? "",
     acmeEmail: item.security.acmeEmail ?? "",
     acmeDns: item.security.acmeDns ?? "",
@@ -633,6 +651,14 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
       realityMinClientVer:
         form.securityType === "reality"
           ? form.realityMinClientVer.trim() || undefined
+          : undefined,
+      realityNoSteal:
+        form.securityType === "reality" ? form.realityNoSteal : undefined,
+      realityServerNames:
+        form.securityType === "reality" &&
+        form.realityNoSteal &&
+        form.realityServerNames.trim()
+          ? splitList(form.realityServerNames)
           : undefined,
       shadowTlsPassword:
         form.securityType === "shadowtls"

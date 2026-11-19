@@ -679,6 +679,7 @@ export interface KernelCapabilitiesApiData {
   splitCategories?: SplitCategory[];
   defaults: {
     realitySni: string;
+    realityRecommendedDomains?: string[];
     fingerprint: string;
     ssMethod: string;
     flow: string;
@@ -756,6 +757,9 @@ export interface InboundSecurity {
   realityPublicKey?: string;
   realityShortIds?: string[];
   realityMinClientVer?: string;
+  realityNoSteal?: boolean;
+  realityServerNames?: string[];
+  realityFallbackPort?: number;
   shadowTlsPassword?: string;
   acmeEmail?: string;
   acmeDns?: string;

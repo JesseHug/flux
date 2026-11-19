@@ -10,12 +10,27 @@ import (
 func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 	list := make([]interface{}, 0, len(inbounds))
 	acme := &acmeProviders{}
+	var fallbackRules []interface{}
+	hasFallback := false
 	for _, in := range inbounds {
 		items, err := singboxInbounds(in, acme)
 		if err != nil {
 			return "", fmt.Errorf("入站 %d: %v", in.ID, err)
 		}
 		list = append(list, items...)
+		if in.Security.Type == SecurityReality && in.Security.RealityNoSteal && in.Security.RealityFallbackPort > 0 {
+			hasFallback = true
+			fallbackTag := in.Tag() + "-fallback"
+			names := in.Security.RealityServerNames
+			if len(names) == 0 && in.Security.SNI != "" {
+				names = []string{in.Security.SNI}
+			}
+			fallbackRules = append(fallbackRules,
+				obj{"inbound": []string{fallbackTag}, "action": "sniff"},
+				obj{"inbound": []string{fallbackTag}, "domain": names, "outbound": "direct"},
+				obj{"inbound": []string{fallbackTag}, "outbound": "block"},
+			)
+		}
 	}
 	// WireGuard servers are endpoints in sing-box's schema.
 	var endpoints, inboundList []interface{}
@@ -29,10 +44,14 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 	if inboundList == nil {
 		inboundList = []interface{}{}
 	}
+	outboundsList := []interface{}{obj{"type": "direct", "tag": "direct"}}
+	if hasFallback {
+		outboundsList = append(outboundsList, obj{"type": "block", "tag": "block"})
+	}
 	cfg := obj{
 		"log":       obj{"level": "warn"},
 		"inbounds":  inboundList,
-		"outbounds": []interface{}{obj{"type": "direct", "tag": "direct"}},
+		"outbounds": outboundsList,
 	}
 	if opts.SingboxPreferGoDNS {
 		// The implicit resolver uses systemd-resolved over DBus. Servers
@@ -53,6 +72,9 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 	chained, rules, sets, err := singboxChainRoutes(inbounds, opts.SingboxSnell)
 	if err != nil {
 		return "", err
+	}
+	if len(fallbackRules) > 0 {
+		rules = append(fallbackRules, rules...)
 	}
 	outbounds := append(cfg["outbounds"].([]interface{}), chained...)
 	// Each user leaves through a direct outbound whose sockets carry the
@@ -239,6 +261,23 @@ func singboxInbounds(in Inbound, acme *acmeProviders) ([]interface{}, error) {
 	if err := mergeExtra(item, in.Extra); err != nil {
 		return nil, err
 	}
+	if in.Security.Type == SecurityReality && in.Security.RealityNoSteal && in.Security.RealityFallbackPort > 0 {
+		host, portStr, err := net.SplitHostPort(in.Security.RealityDest)
+		if err != nil {
+			return nil, fmt.Errorf("Reality 目标地址错误: %v", err)
+		}
+		port, _ := strconv.Atoi(portStr)
+		fallback := obj{
+			"type":            "direct",
+			"tag":             in.Tag() + "-fallback",
+			"listen":          "127.0.0.1",
+			"listen_port":     in.Security.RealityFallbackPort,
+			"network":         "tcp",
+			"override_address": host,
+			"override_port":    port,
+		}
+		return []interface{}{item, fallback}, nil
+	}
 	return []interface{}{item}, nil
 }
 
@@ -299,6 +338,10 @@ func singboxTLS(in Inbound, acme *acmeProviders) (obj, error) {
 			return nil, fmt.Errorf("Reality 目标地址错误")
 		}
 		port, _ := strconv.Atoi(portStr)
+		if sec.RealityNoSteal && sec.RealityFallbackPort > 0 {
+			host = "127.0.0.1"
+			port = sec.RealityFallbackPort
+		}
 		return obj{
 			"enabled":     true,
 			"server_name": sec.SNI,

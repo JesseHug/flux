@@ -21,6 +21,7 @@ import {
   passwordProtocols,
   presetsFor,
   protocolCap,
+  REALITY_RECOMMENDED_DOMAINS,
   sniOptionalProtocols,
   toPayload,
   usernameProtocols,
@@ -982,6 +983,35 @@ export function InboundFormModal({
                             onChange={(e) => set("realityDest", e.target.value)}
                           />
                         </div>
+                        <div className="space-y-1">
+                          <p className="text-xs text-default-400">
+                            推荐池（点击快速填入）：
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {REALITY_RECOMMENDED_DOMAINS.map((domain) => (
+                              <button
+                                key={domain}
+                                className={`rounded-md px-2 py-0.5 text-xs transition-colors font-mono ${
+                                  form.sni === domain
+                                    ? "bg-primary/10 text-primary font-medium"
+                                    : "bg-default-100 text-default-600 hover:bg-default-200 hover:text-foreground"
+                                }`}
+                                type="button"
+                                onClick={() => {
+                                  set("sni", domain);
+                                  if (
+                                    !form.realityDest ||
+                                    form.realityDest.endsWith(":443")
+                                  ) {
+                                    set("realityDest", `${domain}:443`);
+                                  }
+                                }}
+                              >
+                                {domain}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Input
                             label="私钥"
@@ -1011,6 +1041,34 @@ export function InboundFormModal({
                             variant="bordered"
                             onChange={(e) =>
                               set("realityMinClientVer", e.target.value)
+                            }
+                          />
+                        )}
+                        <div className="flex items-start gap-2 pt-1">
+                          <Switch
+                            isSelected={form.realityNoSteal}
+                            size="sm"
+                            onValueChange={(v) => set("realityNoSteal", v)}
+                          />
+                          <div>
+                            <p className="text-sm font-medium">
+                              防偷跑流量（Strict SNI 保护）
+                            </p>
+                            <p className="text-xs text-default-500 leading-relaxed">
+                              未认证连接回落至本机隔离端口嗅探
+                              SNI，非白名单域名直接丢弃，防止 VPS 流量被借用偷跑
+                            </p>
+                          </div>
+                        </div>
+                        {form.realityNoSteal && (
+                          <Input
+                            description={`允许回落的目标域名。留空时默认：${form.sni || "伪装域名"}`}
+                            label="SNI 白名单（可选）"
+                            placeholder="留空默认仅允许伪装域名，多个用逗号隔开"
+                            value={form.realityServerNames}
+                            variant="bordered"
+                            onChange={(e) =>
+                              set("realityServerNames", e.target.value)
                             }
                           />
                         )}

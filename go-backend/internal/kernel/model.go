@@ -116,6 +116,11 @@ type Security struct {
 	// report 1.8.2) and older mobile clients, so the panel always sets it.
 	RealityMinClientVer string `json:"realityMinClientVer,omitempty"`
 
+	// RealityNoSteal enables strict SNI fallback checking to prevent traffic theft.
+	RealityNoSteal      bool     `json:"realityNoSteal,omitempty"`
+	RealityServerNames  []string `json:"realityServerNames,omitempty"`
+	RealityFallbackPort int      `json:"realityFallbackPort,omitempty"`
+
 	// ShadowTLS v3: SNI is the handshake site, this is the shared secret.
 	ShadowTLSPassword string `json:"shadowTlsPassword,omitempty"`
 }
@@ -190,9 +195,21 @@ func (in Inbound) Network() string {
 	return "tcp"
 }
 
+var RealityRecommendedDomains = []string{
+	"dl-cdn.alpinelinux.org",
+	"deb.debian.org",
+	"crates.io",
+	"pypi.org",
+	"rubygems.org",
+	"addons.mozilla.org",
+	"formulae.brew.sh",
+	"static.rust-lang.org",
+	"cpan.org",
+}
+
 const (
 	FlowVision                 = "xtls-rprx-vision"
-	DefaultRealitySNI          = "www.microsoft.com"
+	DefaultRealitySNI          = "dl-cdn.alpinelinux.org"
 	DefaultSSMethod            = "2022-blake3-aes-128-gcm"
 	DefaultFingerprint         = "chrome"
 	DefaultTLSCertMode         = CertModeSelf
@@ -661,6 +678,9 @@ func normalizeSecurity(in *Inbound) error {
 	case SecurityTLS:
 		sec.RealityDest, sec.RealityPrivateKey, sec.RealityPublicKey, sec.RealityShortIDs = "", "", "", nil
 		sec.RealityMinClientVer = ""
+		sec.RealityNoSteal = false
+		sec.RealityServerNames = nil
+		sec.RealityFallbackPort = 0
 		sec.ShadowTLSPassword = ""
 		quic := in.Protocol == ProtocolHysteria2 || in.Protocol == ProtocolTUIC
 		if quic {
@@ -756,6 +776,26 @@ func normalizeSecurity(in *Inbound) error {
 		}
 		if !semverPattern.MatchString(sec.RealityMinClientVer) {
 			return errors.New("最低客户端版本格式应为 x.y.z，例如 1.0.0")
+		}
+		if sec.RealityNoSteal {
+			if sec.RealityFallbackPort < 1024 || sec.RealityFallbackPort > 65535 || sec.RealityFallbackPort == in.Port {
+				sec.RealityFallbackPort = randomPort(20000, 60000)
+			}
+			var names []string
+			for _, n := range sec.RealityServerNames {
+				n = strings.ToLower(strings.TrimSpace(n))
+				if n != "" && hostPattern.MatchString(n) {
+					names = append(names, n)
+				}
+			}
+			if len(names) == 0 && sec.SNI != "" {
+				names = []string{sec.SNI}
+			}
+			sec.RealityServerNames = names
+		} else {
+			sec.RealityNoSteal = false
+			sec.RealityServerNames = nil
+			sec.RealityFallbackPort = 0
 		}
 		return nil
 	}
