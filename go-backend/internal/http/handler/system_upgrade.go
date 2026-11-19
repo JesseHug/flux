@@ -509,9 +509,7 @@ func (e *systemUpgradeExecutor) startHelper(ctx context.Context, imageID, helper
 	return containerID, nil
 }
 
-func (h *Handler) downloadReleaseAsset(version, filename string) ([]byte, error) {
-	url := h.buildSystemUpgradeDownloadURL(version, filename)
-	client := &http.Client{Timeout: 60 * time.Second}
+func fetchComposeAssetFromURL(client *http.Client, url, filename string) ([]byte, error) {
 	resp, err := systemUpgradeHTTPGet(client, url)
 	if err != nil {
 		return nil, fmt.Errorf("下载%s失败: %v", filename, err)
@@ -532,6 +530,28 @@ func (h *Handler) downloadReleaseAsset(version, filename string) ([]byte, error)
 		return nil, fmt.Errorf("下载%s内容为空", filename)
 	}
 	return body, nil
+}
+
+func (h *Handler) downloadReleaseAsset(version, filename string) ([]byte, error) {
+	client := &http.Client{Timeout: 60 * time.Second}
+	directURL := fmt.Sprintf("%s/%s/releases/download/%s/%s", strings.TrimRight(systemUpgradeReleaseBaseURL, "/"), githubRepo, version, filename)
+
+	enabled, proxyURL := h.getGithubProxyConfig()
+	if enabled && !isPanelGithubMirror(proxyURL) {
+		proxyDownloadURL := fmt.Sprintf("%s/%s", proxyURL, directURL)
+		data, err := fetchComposeAssetFromURL(client, proxyDownloadURL, filename)
+		if err == nil {
+			return data, nil
+		}
+		// 加速代理失败（如 GitHub 触发 429 限流或代理网络故障），回退直连 GitHub 下载
+		data, directErr := fetchComposeAssetFromURL(client, directURL, filename)
+		if directErr == nil {
+			return data, nil
+		}
+		return nil, fmt.Errorf("通过加速代理下载失败：%v；直连下载失败：%w", err, directErr)
+	}
+
+	return fetchComposeAssetFromURL(client, directURL, filename)
 }
 
 func releasesForChannel(releases []githubRelease, channel string) []systemUpgradeReleaseData {

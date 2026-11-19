@@ -72,6 +72,57 @@ func TestDownloadReleaseAssetUsesGithubProxyWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestDownloadReleaseAssetFallsBackToDirectOnProxyError(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	repoStore, err := repo.Open(dbPath)
+	if err != nil {
+		t.Fatalf("repo.Open() error = %v", err)
+	}
+	defer repoStore.Close()
+
+	h := &Handler{repo: repoStore}
+	originalBase := systemUpgradeReleaseBaseURL
+	systemUpgradeReleaseBaseURL = "https://example.invalid"
+	t.Cleanup(func() { systemUpgradeReleaseBaseURL = originalBase })
+
+	originalGet := systemUpgradeHTTPGet
+	defer func() { systemUpgradeHTTPGet = originalGet }()
+
+	var requestedURLs []string
+	systemUpgradeHTTPGet = func(client *http.Client, url string) (*http.Response, error) {
+		requestedURLs = append(requestedURLs, url)
+		if strings.HasPrefix(url, "https://proxy.example.com") {
+			return &http.Response{
+				StatusCode: http.StatusTooManyRequests,
+				Body:       io.NopCloser(strings.NewReader("Rate limit · GitHub")),
+			}, nil
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("services:\n  backend:\n    image: test\n")),
+		}, nil
+	}
+
+	now := time.Now().UnixMilli()
+	if err := repoStore.UpsertConfig("github_proxy_enabled", "true", now); err != nil {
+		t.Fatalf("UpsertConfig() error = %v", err)
+	}
+	if err := repoStore.UpsertConfig("github_proxy_url", "https://proxy.example.com", now); err != nil {
+		t.Fatalf("UpsertConfig() error = %v", err)
+	}
+
+	data, err := h.downloadReleaseAsset("3.5.9", "docker-compose-v4.yml")
+	if err != nil {
+		t.Fatalf("downloadReleaseAsset() error = %v", err)
+	}
+	if !strings.Contains(string(data), "backend") {
+		t.Fatalf("downloadReleaseAsset() data = %q, want compose data", string(data))
+	}
+	if len(requestedURLs) != 2 {
+		t.Fatalf("requestedURLs count = %d, want 2 (proxy then direct), got %v", len(requestedURLs), requestedURLs)
+	}
+}
+
 func TestDownloadReleaseAssetRejectsOversizedBody(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	repoStore, err := repo.Open(dbPath)
