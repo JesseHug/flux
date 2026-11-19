@@ -268,11 +268,11 @@ func singboxInbounds(in Inbound, acme *acmeProviders) ([]interface{}, error) {
 		}
 		port, _ := strconv.Atoi(portStr)
 		fallback := obj{
-			"type":            "direct",
-			"tag":             in.Tag() + "-fallback",
-			"listen":          "127.0.0.1",
-			"listen_port":     in.Security.RealityFallbackPort,
-			"network":         "tcp",
+			"type":             "direct",
+			"tag":              in.Tag() + "-fallback",
+			"listen":           "127.0.0.1",
+			"listen_port":      in.Security.RealityFallbackPort,
+			"network":          "tcp",
 			"override_address": host,
 			"override_port":    port,
 		}
