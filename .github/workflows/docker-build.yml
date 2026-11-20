@@ -115,23 +115,30 @@ jobs:
 
       - name: Build GOST binary (AMD64)
         working-directory: ./go-gost
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-amd64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-lite-amd64 ./cmd/agent-lite
 
       - name: Build GOST binary (ARM64)
         working-directory: ./go-gost
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-arm64
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w -X main.version=${{ needs.check-version.outputs.version }}" -o gost-lite-arm64 ./cmd/agent-lite
 
       - name: Compress with UPX
         working-directory: ./go-gost
         run: |
           upx --best --lzma gost-amd64
           upx --best --lzma gost-arm64
+          # Keep gost-lite-* uncompressed so Linux demand-paging shares read-only pages cleanly on NAT hosts.
 
       - name: Generate SHA256 checksums
         working-directory: ./go-gost
         run: |
           sha256sum gost-amd64 > gost-amd64.sha256
           sha256sum gost-arm64 > gost-arm64.sha256
+          sha256sum gost-lite-amd64 > gost-lite-amd64.sha256
+          sha256sum gost-lite-arm64 > gost-lite-arm64.sha256
 
       - name: Upload GOST AMD64 artifact
         uses: actions/upload-artifact@v6
@@ -156,6 +163,30 @@ jobs:
         with:
           name: gost-checksum-arm64
           path: ./go-gost/gost-arm64.sha256
+
+      - name: Upload GOST Lite AMD64 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-lite-binary-amd64
+          path: ./go-gost/gost-lite-amd64
+
+      - name: Upload GOST Lite ARM64 artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-lite-binary-arm64
+          path: ./go-gost/gost-lite-arm64
+
+      - name: Upload GOST Lite AMD64 checksum artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-lite-checksum-amd64
+          path: ./go-gost/gost-lite-amd64.sha256
+
+      - name: Upload GOST Lite ARM64 checksum artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: gost-lite-checksum-arm64
+          path: ./go-gost/gost-lite-arm64.sha256
 
   build-agent-image:
     name: Build & Push Node Agent Image
@@ -343,6 +374,30 @@ jobs:
           name: gost-checksum-arm64
           path: ./artifacts/
 
+      - name: Download GOST Lite AMD64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-binary-amd64
+          path: ./artifacts/lite-amd64
+
+      - name: Download GOST Lite ARM64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-binary-arm64
+          path: ./artifacts/lite-arm64
+
+      - name: Download GOST Lite AMD64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-checksum-amd64
+          path: ./artifacts/
+
+      - name: Download GOST Lite ARM64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-checksum-arm64
+          path: ./artifacts/
+
       - name: Prepare release files
 
         run: |
@@ -353,6 +408,8 @@ jobs:
           # 移动二进制文件
           mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
           mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+          mv ./artifacts/lite-amd64/gost-lite-amd64 ./artifacts/gost-lite-amd64
+          mv ./artifacts/lite-arm64/gost-lite-arm64 ./artifacts/gost-lite-arm64
 
           # 复制并修改 docker-compose 文件
           cp docker-compose-v4.yml ./artifacts/docker-compose-v4.yml
@@ -415,10 +472,14 @@ jobs:
           echo "📤 上传 GOST 二进制文件..."
           gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-arm64 --clobber
 
           echo "📤 上传 GOST 校验文件..."
           gh release upload "${VERSION}" ./artifacts/gost-amd64.sha256 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-amd64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-arm64.sha256 --clobber
 
           echo "📤 上传安装脚本..."
           gh release upload "${VERSION}" ./artifacts/install.sh --clobber
@@ -464,10 +525,36 @@ jobs:
           name: gost-checksum-arm64
           path: ./artifacts/
 
+      - name: Download GOST Lite AMD64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-binary-amd64
+          path: ./artifacts/lite-amd64
+
+      - name: Download GOST Lite ARM64 binary
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-binary-arm64
+          path: ./artifacts/lite-arm64
+
+      - name: Download GOST Lite AMD64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-checksum-amd64
+          path: ./artifacts/
+
+      - name: Download GOST Lite ARM64 checksum
+        uses: actions/download-artifact@v7
+        with:
+          name: gost-lite-checksum-arm64
+          path: ./artifacts/
+
       - name: Rename binaries
         run: |
           mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
           mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+          mv ./artifacts/lite-amd64/gost-lite-amd64 ./artifacts/gost-lite-amd64
+          mv ./artifacts/lite-arm64/gost-lite-arm64 ./artifacts/gost-lite-arm64
 
       - name: Update GOST binaries in Release
         env:
@@ -479,9 +566,13 @@ jobs:
 
           gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-arm64 --clobber
 
           echo "📤 上传 GOST 校验文件..."
           gh release upload "${VERSION}" ./artifacts/gost-amd64.sha256 --clobber
           gh release upload "${VERSION}" ./artifacts/gost-arm64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-amd64.sha256 --clobber
+          gh release upload "${VERSION}" ./artifacts/gost-lite-arm64.sha256 --clobber
 
           echo "✅ GOST 二进制文件更新完成"

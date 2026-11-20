@@ -147,7 +147,9 @@ jobs:
         run: go mod download
 
       - name: Build
-        run: go build -v .
+        run: |
+          go build -v .
+          go build -v ./cmd/agent-lite
 
       - name: Vet
         run: go vet ./...

@@ -344,6 +344,8 @@ func defaultNodeForwardMode(mode string) string {
 	switch strings.TrimSpace(strings.ToLower(mode)) {
 	case "nftables":
 		return "nftables"
+	case "lite":
+		return "lite"
 	default:
 		return "agent"
 	}

@@ -378,7 +378,12 @@ export default function TunnelPage({
       id: tunnel.id,
       name: tunnel.name,
       type: tunnel.type,
-      forwardMode: tunnel.forwardMode === "nftables" ? "nftables" : "agent",
+      forwardMode:
+        tunnel.forwardMode === "nftables"
+          ? "nftables"
+          : tunnel.forwardMode === "lite"
+            ? "lite"
+            : "agent",
       inNodeId: tunnel.inNodeId || [],
       outNodeId: tunnel.outNodeId || [],
       chainNodes: tunnel.chainNodes || [],
@@ -675,20 +680,23 @@ export default function TunnelPage({
         ? Number(form.probeTargetPort || 0)
         : 0;
 
+      const tunnelForwardMode = getTunnelForwardMode(form.inNodeId, nodes);
+
       const data = {
         ...form,
-        forwardMode: getTunnelForwardMode(form.inNodeId, nodes),
+        forwardMode: tunnelForwardMode,
         inIp: inIpString,
         outNodeId: cleanedOutNodeId,
         chainNodes: cleanedChainNodes,
         probeTargetHost,
         probeTargetPort,
-        // nftables entries forward by themselves.
+        // nftables entries forward by themselves; lite entries require realm.
         engine:
-          form.type === 1 &&
-          getTunnelForwardMode(form.inNodeId, nodes) !== "nftables"
-            ? form.engine || ""
-            : "",
+          form.type === 1 && tunnelForwardMode === "lite"
+            ? "realm"
+            : form.type === 1 && tunnelForwardMode !== "nftables"
+              ? form.engine || ""
+              : "",
       };
 
       const response = isEdit

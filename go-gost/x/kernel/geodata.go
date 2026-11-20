@@ -67,6 +67,9 @@ type geoJob struct {
 // restarts the kernels whose files changed. A kernel that fails to start on
 // the new files gets the old ones back.
 func (m *Manager) UpdateGeoData(ctx context.Context) {
+	if m.IsLiteMode() {
+		return
+	}
 	m.mu.Lock()
 	var jobs []geoJob
 	for t, inst := range m.instances {

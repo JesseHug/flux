@@ -372,15 +372,20 @@ func (h *Handler) nodeInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	enabled, proxyURL := h.getGithubProxyConfig()
+	forwardMode, _ := h.repo.GetNodeForwardMode(req.ID)
+	modeEnv := ""
+	if isLiteForwardMode(forwardMode) {
+		modeEnv = "AGENT_MODE=lite "
+	}
 
 	var cmd string
 	address := processServerAddress(panelAddr)
 	if enabled {
-		cmd = fmt.Sprintf("curl -L %s/https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=true PROXY_URL=%s VERSION=%s ./install.sh -a %s -s %s",
-			proxyURL, githubRepo, version, proxyURL, version, address, secret)
+		cmd = fmt.Sprintf("curl -L %s/https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && %sPROXY_ENABLED=true PROXY_URL=%s VERSION=%s ./install.sh -a %s -s %s",
+			proxyURL, githubRepo, version, modeEnv, proxyURL, version, address, secret)
 	} else {
-		cmd = fmt.Sprintf("curl -L https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && PROXY_ENABLED=false VERSION=%s ./install.sh -a %s -s %s",
-			githubRepo, version, version, address, secret)
+		cmd = fmt.Sprintf("curl -L https://github.com/%s/releases/download/%s/install.sh -o ./install.sh && chmod +x ./install.sh && %sPROXY_ENABLED=false VERSION=%s ./install.sh -a %s -s %s",
+			githubRepo, version, modeEnv, version, address, secret)
 	}
 	switch strings.ToLower(strings.TrimSpace(req.Mode)) {
 	case "docker":
@@ -687,6 +692,8 @@ func defaultNodeForwardMode(mode string) string {
 	switch strings.TrimSpace(strings.ToLower(mode)) {
 	case "nftables":
 		return "nftables"
+	case "lite":
+		return "lite"
 	default:
 		return "agent"
 	}

@@ -4,9 +4,13 @@ package identity
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-const AgentName = "flyx-agent"
+const (
+	AgentName     = "flyx-agent"
+	LiteAgentName = "flyx-agent-lite"
+)
 
 func Env(name, legacy string) string {
 	if value, ok := os.LookupEnv(name); ok {
@@ -19,7 +23,7 @@ func Env(name, legacy string) string {
 // running executable preserves its service, kernels, spool and rollback file.
 func installation(executable string) (dir, binary, service string) {
 	switch filepath.Base(executable) {
-	case AgentName, "flux_agent":
+	case AgentName, LiteAgentName, "flux_agent":
 		return filepath.Dir(executable), executable, filepath.Base(executable)
 	default:
 		return "/etc/flyx-agent", "/etc/flyx-agent/flyx-agent", AgentName
@@ -27,6 +31,9 @@ func installation(executable string) (dir, binary, service string) {
 }
 
 func DataDir() string {
+	if dir := strings.TrimSpace(Env("FLYX_AGENT_DATA_DIR", "FLUX_AGENT_DATA_DIR")); dir != "" {
+		return dir
+	}
 	executable, _ := os.Executable()
 	dir, _, _ := installation(executable)
 	return dir

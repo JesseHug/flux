@@ -103,6 +103,9 @@ func (h *Handler) tunnelCreate(w http.ResponseWriter, r *http.Request) {
 	if err == nil && engine == tunnelEngineRealm {
 		err = h.validateRealmTunnelTx(tx, typeVal, entryNodeIDs)
 	}
+	if err == nil {
+		err = validateLiteTunnelState(typeVal, engine, runtimeState)
+	}
 	if err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
@@ -449,6 +452,10 @@ func (h *Handler) tunnelUpdate(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSON(w, response.ErrDefault(err.Error()))
 			return
 		}
+	}
+	if err := validateLiteTunnelState(typeVal, engine, runtimeState); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
 	}
 
 	if err := h.validateTunnelEntryPortConflictsForNewEntriesTx(validationTx, id, oldEntryNodeIDs, entryNodeIDs); err != nil {

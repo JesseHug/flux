@@ -22,14 +22,22 @@ export const getTunnelDiagnosisTarget = (tunnel: Tunnel) => ({
 export const getTunnelForwardMode = (
   inNodeId: ChainTunnel[],
   nodes: Node[],
-): TunnelForwardMode =>
-  inNodeId.some((item) => {
+): TunnelForwardMode => {
+  let hasLite = false;
+
+  for (const item of inNodeId) {
     const node = nodes.find((candidate) => candidate.id === item.nodeId);
 
-    return node?.forwardMode === "nftables";
-  })
-    ? "nftables"
-    : "agent";
+    if (node?.forwardMode === "nftables") {
+      return "nftables";
+    }
+    if (node?.forwardMode === "lite") {
+      hasLite = true;
+    }
+  }
+
+  return hasLite ? "lite" : "agent";
+};
 
 export const createTypedTunnelFormDefaults = (): TunnelForm =>
   createTunnelFormDefaults() as TunnelForm;

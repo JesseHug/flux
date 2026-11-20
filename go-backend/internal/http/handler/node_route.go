@@ -353,7 +353,7 @@ func (h *Handler) traceNodeRoutes(ctx context.Context, ids []int64, force bool) 
 	}
 	todo := make(map[int64]job)
 	for _, n := range nodes {
-		if n.Status != 1 || (len(ids) > 0 && !want[n.ID]) {
+		if n.Status != 1 || isLiteForwardMode(n.ForwardMode) || (len(ids) > 0 && !want[n.ID]) {
 			continue
 		}
 		targets := targetsForNode(pool, n.LatencyTargets)

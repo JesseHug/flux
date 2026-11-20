@@ -60,6 +60,23 @@ func (h *Handler) validateRealmTunnelTx(tx *gorm.DB, typeVal int, entryNodeIDs [
 	return nil
 }
 
+// validateLiteTunnelState rejects GOST forwarding on lite nodes while still
+// allowing realm port-forward tunnels (Q1 decision).
+func validateLiteTunnelState(typeVal int, engine string, state *tunnelCreateState) error {
+	if state == nil {
+		return nil
+	}
+	for _, node := range state.Nodes {
+		if !isLiteForwardMode(node.ForwardMode) {
+			continue
+		}
+		if typeVal != 1 || engine != tunnelEngineRealm {
+			return fmt.Errorf("服务器 %s 处于轻量模式（lite），仅支持 realm 端口转发和节点内核", nodeDisplayName(node))
+		}
+	}
+	return nil
+}
+
 // realmIPHash maps the forward strategy: realm only balances by round robin
 // or IP hash.
 func realmIPHash(strategy string) bool { return strings.TrimSpace(strategy) == "hash" }

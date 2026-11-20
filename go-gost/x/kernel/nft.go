@@ -321,6 +321,12 @@ func newNftCounters(baseDir string) *nftCounters {
 	return n
 }
 
+func (n *nftCounters) hasState() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.state.Signature != ""
+}
+
 // Inspect live tables as well as disk state: nft.json can be lost while the
 // rules remain installed. Never create a second ruleset beside the old one.
 // Listings use nft's text output: older nft builds (1.0.6 in Debian bookworm

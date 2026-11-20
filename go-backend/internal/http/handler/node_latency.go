@@ -316,7 +316,7 @@ func (h *Handler) probeNodeLatency(ctx context.Context, ids []int64) (map[int64]
 	targets := make(map[int64][]latencyTarget)
 	points := make(map[int64][]latencyPoint)
 	for _, n := range nodes {
-		if (len(ids) > 0 && !want[n.ID]) || n.Status != 1 {
+		if (len(ids) > 0 && !want[n.ID]) || n.Status != 1 || isLiteForwardMode(n.ForwardMode) {
 			continue
 		}
 		if t := targetsForNode(pool, n.LatencyTargets); len(t) > 0 {

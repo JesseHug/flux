@@ -101,6 +101,16 @@ const NodeRowContent = memo(function NodeRowContent({
               远程
             </Chip>
           )}
+          {!isRemoteNode && node.forwardMode === "lite" && (
+            <Chip
+              className="shrink-0"
+              color="secondary"
+              size="sm"
+              variant="flat"
+            >
+              轻量
+            </Chip>
+          )}
           {showExpiry && (
             <Chip
               className="shrink-0"

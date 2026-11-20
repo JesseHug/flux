@@ -30,6 +30,10 @@ func isNftablesForwardMode(mode string) bool {
 	return strings.EqualFold(strings.TrimSpace(mode), runtimenft.ModeNftables)
 }
 
+func isLiteForwardMode(mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(mode), "lite")
+}
+
 func (h *Handler) nodeUsesNftables(nodeID int64) (bool, error) {
 	return h.nodeUsesNftablesTx(nil, nodeID)
 }

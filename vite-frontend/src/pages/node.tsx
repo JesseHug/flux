@@ -206,11 +206,14 @@ export default function NodePage({
     socks: 0,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const isNftablesMode = form.forwardMode === "nftables";
-  const protocolControlsDisabled = protocolDisabled || isNftablesMode;
-  const protocolControlsReason = isNftablesMode
-    ? "nftables 模式不支持 agent 协议开关"
-    : protocolDisabledReason || "等待服务器上线后再设置";
+  const isNonAgentMode = form.forwardMode !== "agent";
+  const protocolControlsDisabled = protocolDisabled || isNonAgentMode;
+  const protocolControlsReason =
+    form.forwardMode === "nftables"
+      ? "nftables 模式不支持 agent 协议开关"
+      : form.forwardMode === "lite"
+        ? "lite 模式不支持 agent 协议开关"
+        : protocolDisabledReason || "等待服务器上线后再设置";
 
   const [selectMode, setSelectMode] = useState(false);
   const [sheetNodeId, setSheetNodeId] = useState<number | null>(null);
@@ -652,7 +655,12 @@ export default function NodePage({
       udpListenAddr: node.udpListenAddr || "[::]",
       interfaceName: (node as any).interfaceName || "",
       extraIPs: node.extraIPs || "",
-      forwardMode: node.forwardMode === "nftables" ? "nftables" : "agent",
+      forwardMode:
+        node.forwardMode === "nftables"
+          ? "nftables"
+          : node.forwardMode === "lite"
+            ? "lite"
+            : "agent",
       sshHost: node.sshConfig?.host || normalizedHost || legacy,
       sshPort: String(node.sshConfig?.port || 22),
       sshUsername: node.sshConfig?.username || "",
@@ -667,13 +675,18 @@ export default function NodePage({
     });
     const offline = node.connectionStatus !== "online";
 
-    setProtocolDisabled(offline || node.forwardMode === "nftables");
+    const nonAgent =
+      node.forwardMode === "nftables" || node.forwardMode === "lite";
+
+    setProtocolDisabled(offline || nonAgent);
     setProtocolDisabledReason(
       node.forwardMode === "nftables"
         ? "nftables 模式不支持 agent 协议开关"
-        : offline
-          ? "服务器未在线，等待服务器上线后再设置"
-          : "",
+        : node.forwardMode === "lite"
+          ? "lite 模式不支持 agent 协议开关"
+          : offline
+            ? "服务器未在线，等待服务器上线后再设置"
+            : "",
     );
     setDialogVisible(true);
   }, []);
@@ -1595,12 +1608,17 @@ export default function NodePage({
                         color: "primary" as const,
                         onPress: () => openInstallSelector(node),
                       },
-                      {
-                        key: "tune",
-                        label: "调优",
-                        disabled: !online,
-                        onPress: () => setTuneNode(node),
-                      },
+                      ...(node.forwardMode !== "lite" &&
+                      node.forwardMode !== "nftables"
+                        ? [
+                            {
+                              key: "tune",
+                              label: "调优",
+                              disabled: !online,
+                              onPress: () => setTuneNode(node),
+                            },
+                          ]
+                        : []),
                       {
                         key: "edit",
                         label: "编辑",

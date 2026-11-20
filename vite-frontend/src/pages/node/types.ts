@@ -32,7 +32,7 @@ export interface Node {
   socks?: number; // 0 关 1 开
   status: number;
   isRemote?: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   sshConfig?: {
     host?: string;
     port?: number;
@@ -67,7 +67,7 @@ export interface NodeForm {
   udpListenAddr: string;
   interfaceName: string;
   extraIPs: string;
-  forwardMode: "agent" | "nftables";
+  forwardMode: "agent" | "nftables" | "lite";
   sshHost: string;
   sshPort: string;
   sshUsername: string;

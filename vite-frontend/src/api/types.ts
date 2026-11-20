@@ -4,7 +4,7 @@ export interface NodeApiItem {
   id: number;
   name: string;
   status: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   sshConfig?: NodeSshConfigApiItem | null;
   inx?: number;
   notifyEvents?: NodeNotifyEvents;
@@ -52,7 +52,7 @@ export interface TunnelApiItem {
   name: string;
   type: number;
   status: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   flow?: number;
   trafficRatio?: number;
   inIp?: string;
@@ -73,7 +73,7 @@ export interface ForwardApiItem {
   id: number;
   name: string;
   status: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   tunnelName?: string;
   tunnelTrafficRatio?: number;
   inIp?: string;
@@ -317,7 +317,7 @@ export interface NodeMutationPayload {
   id?: number | null;
   name?: string;
   status?: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   sshConfig?: NodeSshConfigMutationPayload | null;
   inx?: number;
   notifyEvents?: NodeNotifyEvents | null;
@@ -374,7 +374,7 @@ export interface TunnelMutationPayload {
   name?: string;
   type?: number;
   status?: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   flow?: number;
   trafficRatio?: number;
   inIp?: string;
@@ -424,7 +424,7 @@ export interface ForwardMutationPayload {
   id?: number;
   name?: string;
   status?: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   tunnelId?: number | null;
   inIp?: string;
   inPort?: number | null;

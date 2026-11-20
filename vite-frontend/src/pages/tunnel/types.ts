@@ -34,7 +34,7 @@ export interface Tunnel {
   inx?: number;
   name: string;
   type: number; // 1: 端口转发, 2: 隧道转发
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   inNodeId: ChainTunnel[]; // 入口节点列表
   outNodeId?: ChainTunnel[]; // 出口节点列表
   chainNodes?: ChainTunnel[][]; // 转发链节点列表，二维数组
@@ -57,7 +57,7 @@ export interface Node {
   id: number;
   name: string;
   status: number; // 1: 在线, 0: 离线
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   serverIp?: string;
   serverIpV4?: string;
   serverIpV6?: string;
@@ -68,7 +68,7 @@ export interface TunnelForm {
   id?: number;
   name: string;
   type: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   inNodeId: ChainTunnel[];
   outNodeId?: ChainTunnel[];
   chainNodes?: ChainTunnel[][]; // 转发链节点列表，二维数组，外层是跳数，内层是该跳的节点

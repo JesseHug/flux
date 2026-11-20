@@ -217,6 +217,9 @@ export function NodeFormModal({
               <SelectItem key="agent" textValue="agent">
                 agent 模式
               </SelectItem>
+              <SelectItem key="lite" textValue="lite">
+                lite 模式（NAT / 小内存专用）
+              </SelectItem>
               <SelectItem key="nftables" textValue="nftables">
                 nftables 模式
               </SelectItem>
@@ -226,6 +229,12 @@ export function NodeFormModal({
               <Alert
                 color="warning"
                 description="nftables 模式仅支持纯转发，不支持隧道、流量控制和 agent 安装，规则将由面板通过 SSH 下发。"
+                variant="flat"
+              />
+            ) : form.forwardMode === "lite" ? (
+              <Alert
+                color="primary"
+                description="lite 模式（NAT / 小内存专用）：安装超轻量 agent，禁用节点监控指标、延迟测试和 GOST 转发，仅保留代理内核与可选 realm 转发；按需下发 nftables，不采集流量统计。"
                 variant="flat"
               />
             ) : (
@@ -556,13 +565,21 @@ export function NodeFormModal({
                     />
                   </div>
                   {/* 屏蔽协议 */}
-                  <div>
-                    <div className="text-sm font-medium text-default-700 mb-2">
-                      屏蔽协议
-                    </div>
-                    <div className="text-xs text-default-500 mb-2">
-                      开启开关以屏蔽对应协议
-                    </div>
+                  {form.forwardMode === "lite" ? (
+                    <Alert
+                      color="primary"
+                      description="lite 模式不运行 GOST 转发协议，无需配置协议开关。"
+                      variant="flat"
+                    />
+                  ) : (
+                    <>
+                      <div>
+                        <div className="text-sm font-medium text-default-700 mb-2">
+                          屏蔽协议
+                        </div>
+                        <div className="text-xs text-default-500 mb-2">
+                          开启开关以屏蔽对应协议
+                        </div>
                     {protocolControlsDisabled && (
                       <Alert
                         className="mb-2"
@@ -702,6 +719,8 @@ export function NodeFormModal({
                     description="请不要在出口服务器执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口服务器执行。"
                     variant="flat"
                   />
+                    </>
+                  )}
                 </div>
               </AccordionItem>
             </Accordion>

@@ -238,6 +238,15 @@ func resolveLatestReleaseByChannel(channel string) (string, error) {
 	return "", fmt.Errorf("未找到%s版本号", releaseChannelLabel(normalizedChannel))
 }
 
+func (h *Handler) nodeUpgradeBinaryName(nodeID int64) string {
+	if h != nil && h.repo != nil && nodeID > 0 {
+		if mode, err := h.repo.GetNodeForwardMode(nodeID); err == nil && isLiteForwardMode(mode) {
+			return "gost-lite-{ARCH}"
+		}
+	}
+	return "gost-{ARCH}"
+}
+
 func (h *Handler) nodeUpgrade(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		response.WriteJSON(w, response.ErrDefault("请求失败"))
@@ -269,8 +278,9 @@ func (h *Handler) nodeUpgrade(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	downloadURL := h.buildGithubDownloadURL(version, "gost-{ARCH}")
-	checksumURL := h.buildGithubDownloadURL(version, "gost-{ARCH}.sha256")
+	binaryName := h.nodeUpgradeBinaryName(req.ID)
+	downloadURL := h.buildGithubDownloadURL(version, binaryName)
+	checksumURL := h.buildGithubDownloadURL(version, binaryName+".sha256")
 
 	result, err := h.wsServer.SendCommand(req.ID, "UpgradeAgent", map[string]interface{}{
 		"downloadUrl": downloadURL,
@@ -327,9 +337,6 @@ func (h *Handler) nodeBatchUpgrade(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	downloadURL := h.buildGithubDownloadURL(version, "gost-{ARCH}")
-	checksumURL := h.buildGithubDownloadURL(version, "gost-{ARCH}.sha256")
-
 	type upgradeResult struct {
 		ID      int64  `json:"id"`
 		Success bool   `json:"success"`
@@ -347,6 +354,9 @@ func (h *Handler) nodeBatchUpgrade(w http.ResponseWriter, r *http.Request) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			binaryName := h.nodeUpgradeBinaryName(nodeID)
+			downloadURL := h.buildGithubDownloadURL(version, binaryName)
+			checksumURL := h.buildGithubDownloadURL(version, binaryName+".sha256")
 			result, err := h.wsServer.SendCommand(nodeID, "UpgradeAgent", map[string]interface{}{
 				"downloadUrl": downloadURL,
 				"checksumUrl": checksumURL,

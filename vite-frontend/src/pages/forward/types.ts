@@ -4,7 +4,7 @@ import type { BatchOperationFailure } from "@/api/types";
 export interface Forward {
   id: number;
   name: string;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   tunnelId: number;
   tunnelName: string;
   tunnelTrafficRatio?: number;
@@ -35,7 +35,7 @@ export interface Forward {
 export interface Tunnel {
   id: number;
   name: string;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
   type?: number;
   inIp?: string;
   inNodeId?: Array<{ nodeId: number }>;

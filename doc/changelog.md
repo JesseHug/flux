@@ -4,6 +4,15 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/JesseHug/flux/releases)。
 
+## 3.6.0
+
+2026-11-21
+
+- **新增 NAT / 小内存 `lite` 模式（`gost-lite` 超轻量 Agent）**：针对 128 MB 等小内存 NAT VPS 新增 `lite` 转发模式与独立非 UPX 压缩二进制 `gost-lite-{ARCH}`。关闭重型节点监控采集、延迟/回程探测、系统调优、GOST 转发及周期性流量计数轮询，大幅降低常驻内存占用；保留代理内核（`sing-box`、`xray`、`snell`）与可选 `realm` 端口转发，来源白名单与 Hysteria2 端口跳跃规则改用 `nftables` 按需下发
+- **小内存内核自适应内存限制与下载回退**：agent 自动读取 cgroup v2/v1 及系统可用内存，为低内存宿主机的 `sing-box` / `xray` 子进程注入 `GOMEMLIMIT` 与 `GOGC=50`；内核列表与版本下载在面板端预先解析 GitHub Release 地址与 SHA-256，不再让 NAT 机请求 `api.github.com`，并在 GitHub 镜像代理失败或触发 429 限流时自动回退直连下载
+- **修复旧版 SQLite 数据库缺少 `nft_error` / `forward_mode` 列**：补充遗漏的 SQLite 历史表字段迁移逻辑，修复升级后新增或编辑服务器时报 `table node has no column named nft_error` 的问题
+- **升级**：需要升级面板端以获取 `lite` 模式、预解析与数据库修复；仅新建或使用轻量模式的 NAT 服务器需选用 `lite` 模式重新安装（或升级至）`gost-lite`，现有普通服务器可继续使用原 `agent` 模式（建议一并升级到 3.6.0 以获得直连回退与内存限制保护）
+
 ## 3.5.9
 
 2026-11-19

@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -1315,6 +1316,7 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	if err != nil {
 		return nil, "", err
 	}
+	download = resolveGitHubKernelDownload(info, k.Version, proxy, download)
 	payload := map[string]interface{}{
 		"type":     k.KernelType,
 		"version":  k.Version,
@@ -1358,11 +1360,142 @@ type kernelVersionItem struct {
 	PublishedAt string `json:"publishedAt,omitempty"`
 }
 
+type kernelReleaseAsset struct {
+	Name               string `json:"name"`
+	Digest             string `json:"digest"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
+type kernelReleaseDetail struct {
+	TagName string               `json:"tag_name"`
+	Draft   bool                 `json:"draft"`
+	Assets  []kernelReleaseAsset `json:"assets"`
+}
+
 var kernelVersionCache = struct {
 	sync.Mutex
 	at    map[string]time.Time
 	items map[string][]kernelVersionItem
 }{at: map[string]time.Time{}, items: map[string][]kernelVersionItem{}}
+
+var kernelReleaseAssetCache = struct {
+	sync.Mutex
+	at    map[string]time.Time
+	items map[string]kernelReleaseDetail
+}{at: map[string]time.Time{}, items: map[string]kernelReleaseDetail{}}
+
+var kernelGitHubAPIBase = githubAPIBase
+
+func fetchKernelReleaseDetail(repo, tag string) (kernelReleaseDetail, error) {
+	key := repo + "@" + tag
+	if tag == "" {
+		key = repo + "@latest"
+	}
+	kernelReleaseAssetCache.Lock()
+	if at, ok := kernelReleaseAssetCache.at[key]; ok && time.Since(at) < 30*time.Minute {
+		cached := kernelReleaseAssetCache.items[key]
+		kernelReleaseAssetCache.Unlock()
+		return cached, nil
+	}
+	stale, hasStale := kernelReleaseAssetCache.items[key]
+	kernelReleaseAssetCache.Unlock()
+
+	endpoint := fmt.Sprintf("%s/repos/%s/releases/tags/%s", kernelGitHubAPIBase, repo, tag)
+	if tag == "" {
+		endpoint = fmt.Sprintf("%s/repos/%s/releases/latest", kernelGitHubAPIBase, repo)
+	}
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		if hasStale {
+			return stale, nil
+		}
+		return kernelReleaseDetail{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		if hasStale {
+			return stale, nil
+		}
+		return kernelReleaseDetail{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		if hasStale {
+			return stale, nil
+		}
+		return kernelReleaseDetail{}, fmt.Errorf("GitHub API 返回 %d", resp.StatusCode)
+	}
+	var rel kernelReleaseDetail
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&rel); err != nil {
+		if hasStale {
+			return stale, nil
+		}
+		return kernelReleaseDetail{}, err
+	}
+	kernelReleaseAssetCache.Lock()
+	kernelReleaseAssetCache.at[key] = time.Now()
+	kernelReleaseAssetCache.items[key] = rel
+	kernelReleaseAssetCache.Unlock()
+	return rel, nil
+}
+
+// resolveGitHubKernelDownload resolves concrete asset URLs and SHA-256 digests
+// on the panel so NAT/lite nodes never have to hit api.github.com themselves.
+func resolveGitHubKernelDownload(info kernel.Info, requestedVersion, proxy string, download map[string]interface{}) map[string]interface{} {
+	gh, ok := download["github"].(map[string]interface{})
+	if !ok {
+		return download
+	}
+	repo, _ := gh["repo"].(string)
+	if strings.TrimSpace(repo) == "" {
+		return download
+	}
+	tag, _ := gh["tag"].(string)
+	rel, err := fetchKernelReleaseDetail(repo, tag)
+	if err != nil {
+		return download
+	}
+	version := strings.TrimPrefix(strings.TrimSpace(rel.TagName), "v")
+	if version == "" {
+		version = normalizeKernelVersion(requestedVersion)
+	}
+	if version == "" || strings.EqualFold(version, "latest") {
+		return download
+	}
+	next, err := kernel.ResolveDownload(info, version, proxy)
+	if err != nil {
+		return download
+	}
+	nextGH, _ := next["github"].(map[string]interface{})
+	assetTpl, _ := nextGH["asset"].(string)
+	archMap, _ := next["archMap"].(map[string]string)
+	if assetTpl == "" || len(archMap) == 0 {
+		return next
+	}
+	byName := make(map[string]string, len(rel.Assets))
+	for _, a := range rel.Assets {
+		digest := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(a.Digest), "sha256:"))
+		if len(digest) == 64 {
+			byName[a.Name] = digest
+		}
+	}
+	sha256Map := make(map[string]string, len(archMap))
+	for _, arch := range archMap {
+		name := strings.NewReplacer("{VERSION}", version, "{ARCH}", arch).Replace(assetTpl)
+		if digest, ok := byName[name]; ok {
+			sha256Map[arch] = digest
+		}
+	}
+	if len(sha256Map) > 0 {
+		next["sha256"] = sha256Map
+	}
+	return next
+}
 
 // kernelReleaseVersions lists recent releases of a kernel from GitHub,
 // cached for 30 minutes. Kernels with a pinned list return that list.
@@ -1833,7 +1966,7 @@ func (h *Handler) runKernelStatusLoop(ctx context.Context) {
 		}
 		for _, nodeID := range nodeIDs {
 			node, err := h.repo.GetNodeByID(nodeID)
-			if err != nil || node == nil || node.Status != 1 {
+			if err != nil || node == nil || node.Status != 1 || isLiteForwardMode(node.ForwardMode) {
 				continue
 			}
 			h.refreshNodeKernelStatus(nodeID)

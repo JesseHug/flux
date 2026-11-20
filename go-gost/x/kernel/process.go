@@ -58,6 +58,7 @@ type process struct {
 	bin    string
 	args   []string
 	dir    string
+	env    []string
 	logs   *logRing
 	prefix string // prepended to output lines when a kernel runs several processes
 
@@ -127,6 +128,9 @@ func (p *process) supervise() {
 func (p *process) runOnce() error {
 	cmd := exec.Command(p.bin, p.args...)
 	cmd.Dir = p.dir
+	if len(p.env) > 0 {
+		cmd.Env = p.env
+	}
 	cmd.SysProcAttr = sysProcAttr()
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw

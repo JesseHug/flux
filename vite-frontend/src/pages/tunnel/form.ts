@@ -8,7 +8,8 @@ interface TunnelFormInput {
   inNodeId: TunnelChainNode[];
   outNodeId?: TunnelChainNode[];
   trafficRatio: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
+  engine?: string;
   probeTargetHost?: string;
   probeTargetPort?: number;
 }
@@ -16,7 +17,7 @@ interface TunnelFormInput {
 interface TunnelNodeInput {
   id: number;
   status: number;
-  forwardMode?: "agent" | "nftables";
+  forwardMode?: "agent" | "nftables" | "lite";
 }
 
 const isValidProbeIPv4 = (host: string) => {
@@ -189,6 +190,8 @@ export const validateTunnelForm = (
   if (form.type === 2) {
     if (form.forwardMode === "nftables") {
       errors.type = "nftables 服务器仅支持端口转发";
+    } else if (form.forwardMode === "lite") {
+      errors.type = "lite 服务器不支持隧道转发，请改用 realm 端口转发或节点内核";
     }
 
     if (!form.outNodeId || form.outNodeId.length === 0) {
@@ -231,6 +234,18 @@ export const validateTunnelForm = (
         errors.outNodeId = "nftables 服务器不支持出口服务器配置";
       }
     }
+  }
+
+  const hasLiteNode = [...(form.inNodeId || []), ...(form.outNodeId || [])].some(
+    (item) => {
+      const node = nodes.find((n) => n.id === item.nodeId);
+
+      return node?.forwardMode === "lite";
+    },
+  );
+
+  if (hasLiteNode && form.type === 2 && !errors.type) {
+    errors.type = "lite 服务器不支持隧道转发，请改用 realm 端口转发或节点内核";
   }
 
   return errors;

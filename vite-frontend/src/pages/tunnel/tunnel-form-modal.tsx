@@ -131,6 +131,11 @@ export function TunnelFormModal({
                       入口是 nftables 服务器，由 nftables
                       转发（在服务器的转发模式里设置）
                     </p>
+                  ) : getTunnelForwardMode(form.inNodeId, nodes) === "lite" ? (
+                    <p className="text-small text-default-500">
+                      入口包含 lite（轻量）服务器，强制使用 realm
+                      引擎转发（不支持 GOST 转发与限速）
+                    </p>
                   ) : (
                     <Select
                       description={
@@ -195,9 +200,16 @@ export function TunnelFormModal({
                     variant="bordered"
                     onSelectionChange={(keys) => {
                       const selectedIds = toSelectedNodeIds(keys);
+                      const hasLiteEntry = selectedIds.some(
+                        (id) =>
+                          nodes.find((n) => n.id === id)?.forwardMode ===
+                          "lite",
+                      );
 
                       setForm((prev) => ({
                         ...prev,
+                        type: hasLiteEntry ? 1 : prev.type,
+                        engine: hasLiteEntry ? "realm" : prev.engine,
                         inNodeId: mergeOrderedNodes(
                           prev.inNodeId,
                           selectedIds,

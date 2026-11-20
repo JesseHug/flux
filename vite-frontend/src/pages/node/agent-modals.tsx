@@ -130,6 +130,13 @@ export function InstallCommandModal({
                     <p className="text-sm text-default-600">
                       在服务器上以 root 执行，安装为 systemd / OpenRC 服务：
                     </p>
+                    {installCommands.script.includes("AGENT_MODE=lite") && (
+                      <p className="text-xs text-secondary-600 dark:text-secondary-400">
+                        当前服务器为 lite 模式（NAT /
+                        小内存专用），建议使用此一键脚本安装超轻量 agent
+                        （gost-lite），不建议在小内存机器使用 Docker。
+                      </p>
+                    )}
                     {commandBox}
                   </div>
                 </Tab>

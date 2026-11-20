@@ -35,10 +35,27 @@ type Manager struct {
 	applyMu     sync.Mutex
 	mu          sync.Mutex
 	restoreOnce sync.Once
+	liteMode    bool
 	instances   map[string]*instance
 	nft         *nftCounters
 	// lastNftErr is the last nftables sync failure logged (guarded by mu).
 	lastNftErr string
+}
+
+// SetLiteMode switches the manager between normal and NAT/low-memory lite mode:
+// background GeoData auto-updates are disabled and nftables only applies on demand
+// when ports require a relay whitelist or port hopping.
+func (m *Manager) SetLiteMode(lite bool) {
+	m.mu.Lock()
+	m.liteMode = lite
+	m.mu.Unlock()
+}
+
+// IsLiteMode reports whether this manager runs in lite mode.
+func (m *Manager) IsLiteMode() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.liteMode
 }
 
 var (
@@ -80,7 +97,9 @@ func (m *Manager) binDir(t, version string) string {
 func (m *Manager) Restore() {
 	m.restoreOnce.Do(func() {
 		m.restore()
-		m.startGeoUpdater()
+		if !m.IsLiteMode() {
+			m.startGeoUpdater()
+		}
 	})
 }
 
@@ -141,10 +160,29 @@ func (m *Manager) allUserMarks() []int64 {
 	return ids
 }
 
+func portsNeedNft(ports []Port) bool {
+	for _, p := range ports {
+		if p.Allow != nil || (p.HopFrom > 0 && p.HopTo > p.HopFrom) {
+			return true
+		}
+	}
+	return false
+}
+
 // syncNft installs access rules before any protected process starts. Counter
 // failures remain non-fatal for kernels without a whitelist.
 func (m *Manager) syncNft() error {
-	err := m.nft.sync(m.allPorts(), m.allUserMarks())
+	ports := m.allPorts()
+	users := m.allUserMarks()
+	if m.IsLiteMode() && !portsNeedNft(ports) {
+		if !m.nft.hasState() {
+			return nil
+		}
+		// Previously created whitelist/hop rules are no longer needed: delete them.
+		ports = nil
+		users = nil
+	}
+	err := m.nft.sync(ports, users)
 	if err == nil {
 		m.mu.Lock()
 		m.lastNftErr = ""
@@ -398,6 +436,7 @@ func (m *Manager) startProcesses(inst *instance) {
 	bins := inst.bins
 	m.mu.Unlock()
 
+	env := kernelProcessEnv(inst.req.Type)
 	procs := make([]*process, 0, len(specs))
 	for _, spec := range specs {
 		bin := bins[spec.Bin]
@@ -407,6 +446,7 @@ func (m *Manager) startProcesses(inst *instance) {
 		}
 		p := newProcess(bin, expandArgs(spec.Args, runDir, filepath.Dir(bin)), runDir, inst.logs)
 		p.prefix = prefix
+		p.env = env
 		procs = append(procs, p)
 	}
 	m.mu.Lock()
@@ -535,6 +575,21 @@ func (m *Manager) Status(logsFor string) Status {
 	out := Status{Kernels: make([]State, 0, len(types))}
 	for _, t := range types {
 		out.Kernels = append(out.Kernels, m.state(t, t == logsFor))
+	}
+	if m.IsLiteMode() {
+		if err := nftAvailable(); err != nil {
+			out.NftError = nftUnavailableText(err)
+		} else {
+			m.mu.Lock()
+			lastErr := m.lastNftErr
+			m.mu.Unlock()
+			if lastErr != "" {
+				out.NftError = lastErr
+			} else {
+				out.NftAvailable = true
+			}
+		}
+		return out
 	}
 	if len(m.allPorts()) == 0 {
 		if err := nftAvailable(); err != nil {

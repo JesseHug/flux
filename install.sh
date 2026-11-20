@@ -233,10 +233,21 @@ resolve_version() {
   return 1
 }
 
+# 安装模式：standard（完整 agent）或 lite（NAT / 小内存专用超轻量 agent）
+AGENT_MODE="${AGENT_MODE:-}"
+
 # 构建下载地址
 build_download_url() {
     local ARCH=$(get_architecture)
-    echo "https://github.com/${REPO}/releases/download/${RESOLVED_VERSION}/gost-${ARCH}"
+    local mode="${AGENT_MODE:-}"
+    if [[ -z "$mode" && -f "$INSTALL_DIR/.agent-mode" ]]; then
+      mode=$(tr -d '[:space:]' < "$INSTALL_DIR/.agent-mode")
+    fi
+    local prefix="gost"
+    if [[ "$mode" == "lite" ]]; then
+      prefix="gost-lite"
+    fi
+    echo "https://github.com/${REPO}/releases/download/${RESOLVED_VERSION}/${prefix}-${ARCH}"
 }
 
 ensure_download_url_initialized() {
@@ -460,6 +471,7 @@ EOF
 
 name="$AGENT_NAME"
 description="FLYX Agent Proxy Service"
+export GODEBUG=disablethp=1
 command="$INSTALL_DIR/$AGENT_NAME"
 directory="$INSTALL_DIR"
 command_background="yes"
@@ -581,10 +593,11 @@ get_config_params() {
 }
 
 # 解析命令行参数
-while getopts "a:s:" opt; do
+while getopts "a:s:m:" opt; do
   case $opt in
     a) SERVER_ADDR="$OPTARG" ;;
     s) SECRET="$OPTARG" ;;
+    m) AGENT_MODE="$OPTARG" ;;
     *) echo "❌ 无效参数"; exit 1 ;;
   esac
 done
@@ -598,11 +611,18 @@ install_agent() {
 
   get_config_params
 
-  # 检查并安装 tcpkill
-  check_and_install_tcpkill
+  # 检查并安装 tcpkill（lite 模式不执行流量劫持/限制，跳过以节省空间与时间）
+  if [[ "${AGENT_MODE:-}" != "lite" ]]; then
+    check_and_install_tcpkill
+  fi
   ensure_service_manager || exit 1
 
   mkdir -p "$INSTALL_DIR"
+  if [[ "${AGENT_MODE:-}" == "lite" ]]; then
+    echo "lite" > "$INSTALL_DIR/.agent-mode"
+  else
+    rm -f "$INSTALL_DIR/.agent-mode"
+  fi
 
   local tmp_binary="$INSTALL_DIR/$AGENT_NAME.new"
 
@@ -682,9 +702,15 @@ update_agent() {
   ensure_download_url_initialized || return 1
   
   echo "📥 使用下载地址: $DOWNLOAD_URL"
-  
+
+  if [[ -z "${AGENT_MODE:-}" && -f "$INSTALL_DIR/.agent-mode" ]]; then
+    AGENT_MODE=$(tr -d '[:space:]' < "$INSTALL_DIR/.agent-mode")
+  fi
+
   # 检查并安装 tcpkill
-  check_and_install_tcpkill
+  if [[ "${AGENT_MODE:-}" != "lite" ]]; then
+    check_and_install_tcpkill
+  fi
   ensure_service_manager || return 1
   
   # 先下载新版本

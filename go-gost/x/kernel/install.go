@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -76,6 +77,44 @@ func fetch(ctx context.Context, url string, limit int64, w io.Writer) error {
 	return nil
 }
 
+// directFallbackURL extracts the origin URL from a mirrored URL such as
+// "https://proxy.example.com/https://github.com/...". Returns "" when rawURL
+// is not wrapped by a mirror prefix.
+func directFallbackURL(rawURL string) string {
+	schemeEnd := strings.Index(rawURL, "://")
+	if schemeEnd <= 0 {
+		return ""
+	}
+	rest := rawURL[schemeEnd+3:]
+	for _, prefix := range []string{"https://", "http://"} {
+		if idx := strings.Index(rest, prefix); idx > 0 {
+			return rest[idx:]
+		}
+	}
+	return ""
+}
+
+func fetchWithDirectFallback(ctx context.Context, url string, limit int64, reset func() error, w io.Writer) error {
+	err := fetch(ctx, url, limit, w)
+	if err == nil {
+		return nil
+	}
+	direct := directFallbackURL(url)
+	if direct == "" {
+		return err
+	}
+	if reset != nil {
+		if rErr := reset(); rErr != nil {
+			return err
+		}
+	}
+	if directErr := fetch(ctx, direct, limit, w); directErr == nil {
+		return nil
+	} else {
+		return fmt.Errorf("%w（直连回退失败: %v）", err, directErr)
+	}
+}
+
 // githubAPIBase is a variable so tests can point it at a local server.
 var githubAPIBase = "https://api.github.com"
 
@@ -88,6 +127,28 @@ type githubReleaseJSON struct {
 	} `json:"assets"`
 }
 
+func decodeGitHubReleaseURL(ctx context.Context, apiURL string) (githubReleaseJSON, error) {
+	var rel githubReleaseJSON
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return rel, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return rel, fmt.Errorf("下载失败: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return rel, fmt.Errorf("下载失败: HTTP %d (%s)", resp.StatusCode, apiURL)
+	}
+	// Stream decode directly from resp.Body to avoid holding a multi-MB buffer in memory.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&rel); err != nil {
+		return rel, fmt.Errorf("解析 GitHub 发布信息失败: %v", err)
+	}
+	return rel, nil
+}
+
 // resolveGitHub fills in the download URL and digest of a release asset from
 // the GitHub API (the asset "digest" field is "sha256:<hex>").
 func resolveGitHub(ctx context.Context, g *GitHubRelease, arch string) (url, digest string, err error) {
@@ -95,19 +156,21 @@ func resolveGitHub(ctx context.Context, g *GitHubRelease, arch string) (url, dig
 	if g.Tag != "" {
 		path = "tags/" + g.Tag
 	}
-	apiURL := fmt.Sprintf("%s/repos/%s/releases/%s", githubAPIBase, g.Repo, path)
+	rawAPIURL := fmt.Sprintf("%s/repos/%s/releases/%s", githubAPIBase, g.Repo, path)
+	apiURL := rawAPIURL
 	// The panel's own mirror also answers API requests (public proxies may
 	// not), so nodes that can't reach GitHub look the release up there too.
 	if p := strings.TrimSuffix(strings.TrimSpace(g.Proxy), "/"); strings.HasSuffix(p, "/api/v1/open_api/gh") {
-		apiURL = p + "/" + apiURL
+		apiURL = p + "/" + rawAPIURL
 	}
-	var body strings.Builder
-	if err := fetch(ctx, apiURL, 4<<20, &body); err != nil {
+	rel, err := decodeGitHubReleaseURL(ctx, apiURL)
+	if err != nil && apiURL != rawAPIURL {
+		if directRel, directErr := decodeGitHubReleaseURL(ctx, rawAPIURL); directErr == nil {
+			rel, err = directRel, nil
+		}
+	}
+	if err != nil {
 		return "", "", fmt.Errorf("查询 GitHub 发布信息失败: %v", err)
-	}
-	var rel githubReleaseJSON
-	if err := json.Unmarshal([]byte(body.String()), &rel); err != nil {
-		return "", "", fmt.Errorf("解析 GitHub 发布信息失败: %v", err)
 	}
 	version := strings.TrimPrefix(rel.TagName, "v")
 	name := strings.NewReplacer("{VERSION}", version, "{ARCH}", arch).Replace(g.Asset)
@@ -131,6 +194,8 @@ func resolveGitHub(ctx context.Context, g *GitHubRelease, arch string) (url, dig
 // install downloads, verifies and unpacks a binary into binDir. It refuses to
 // install anything whose SHA-256 it cannot establish.
 func install(d *Download, binDir string) error {
+	defer debug.FreeOSMemory()
+
 	arch, err := resolveArch(d)
 	if err != nil {
 		return err
@@ -163,16 +228,32 @@ func install(d *Download, binDir string) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
 
 	hasher := sha256.New()
-	if err := fetch(ctx, url, maxDownloadBytes, io.MultiWriter(tmp, hasher)); err != nil {
+	err = fetchWithDirectFallback(ctx, url, maxDownloadBytes, func() error {
+		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		if err := tmp.Truncate(0); err != nil {
+			return err
+		}
+		hasher.Reset()
+		return nil
+	}, io.MultiWriter(tmp, hasher))
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
 		return err
 	}
 	if want == "" {
 		var sb strings.Builder
-		if err := fetch(ctx, sumURL, 64<<10, &sb); err != nil {
+		if err := fetchWithDirectFallback(ctx, sumURL, 64<<10, func() error {
+			sb.Reset()
+			return nil
+		}, &sb); err != nil {
 			return fmt.Errorf("获取校验文件失败: %v", err)
 		}
 		var ok bool
@@ -193,12 +274,13 @@ func install(d *Download, binDir string) error {
 
 	switch d.Archive {
 	case "zip":
-		err = extractZip(tmp.Name(), staging)
+		err = extractZip(tmpPath, staging)
 	case "tar.gz":
-		err = extractTarGz(tmp.Name(), staging)
+		err = extractTarGz(tmpPath, staging)
 	default:
-		err = copyFile(tmp.Name(), filepath.Join(staging, d.BinName), 0o755)
+		err = copyFile(tmpPath, filepath.Join(staging, d.BinName), 0o755)
 	}
+	_ = os.Remove(tmpPath)
 	if err != nil {
 		return err
 	}
