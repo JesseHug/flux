@@ -64,7 +64,7 @@ func ParseXrayUserStat(name string) (id int64, dir string, ok bool) {
 
 func (m *Manager) startStatsCollector() {
 	m.mu.Lock()
-	if m.IsLiteMode() || m.statsQuerier == nil || m.statsStarted {
+	if m.liteMode || m.statsQuerier == nil || m.statsStarted {
 		m.mu.Unlock()
 		return
 	}

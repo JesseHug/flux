@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -95,6 +96,7 @@ type Server struct {
 	nodes    map[int64]*nodeSession
 	byConn   map[*websocket.Conn]*nodeSession
 	pending  map[string]pendingRequest
+	reqSeq   atomic.Uint64
 	// lastMetric holds each online node's latest broadcast metric message, so
 	// a page that connects between agent reports shows metrics right away
 	// instead of waiting for the next report.
@@ -478,17 +480,15 @@ func (s *Server) SendCommand(nodeID int64, cmdType string, data interface{}, tim
 		timeout = 10 * time.Second
 	}
 
-	s.mu.RLock()
-	ns, ok := s.nodes[nodeID]
-	s.mu.RUnlock()
-	if !ok || ns == nil || ns.conn == nil || ns.conn.conn == nil {
-		return CommandResult{}, errors.New("服务器不在线")
-	}
-
-	requestID := fmt.Sprintf("%d_%d", nodeID, time.Now().UnixNano())
+	requestID := fmt.Sprintf("%d_%d_%d", nodeID, time.Now().UnixNano(), s.reqSeq.Add(1))
 	ch := make(chan CommandResult, 1)
 
 	s.mu.Lock()
+	ns, ok := s.nodes[nodeID]
+	if !ok || ns == nil || ns.conn == nil || ns.conn.conn == nil {
+		s.mu.Unlock()
+		return CommandResult{}, errors.New("服务器不在线")
+	}
 	s.pending[requestID] = pendingRequest{nodeID: nodeID, ch: ch}
 	s.mu.Unlock()
 
