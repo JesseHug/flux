@@ -9,7 +9,7 @@ import (
 )
 
 func TestRuleIdentityPreservesLegacyTablesAndRejectsAmbiguity(t *testing.T) {
-	for _, table := range []string{"", "flyx", "flvx", "both"} {
+	for _, table := range []string{"", "flux", "flyx", "flvx", "both"} {
 		t.Run(table, func(t *testing.T) {
 			dir := t.TempDir()
 			batch := filepath.Join(dir, "batch")
@@ -17,16 +17,16 @@ func TestRuleIdentityPreservesLegacyTablesAndRejectsAmbiguity(t *testing.T) {
 			fake := `#!/bin/sh
 if [ "$1 $2" = 'list tables' ]; then exit 0; fi
 if [ "$1 $2" = 'list table' ]; then
-  [ "$FLYX_TEST_TABLE" = both ] || [ "$4" = "$FLYX_TEST_TABLE" ]
+  [ "$FLUX_TEST_TABLE" = both ] || [ "$4" = "$FLUX_TEST_TABLE" ]
   exit $?
 fi
-if [ "$1" = '-f' ]; then cp "$2" "$FLYX_TEST_BATCH"; fi
+if [ "$1" = '-f' ]; then cp "$2" "$FLUX_TEST_BATCH"; fi
 `
 			if err := os.WriteFile(nft, []byte(fake), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			t.Setenv("FLYX_TEST_TABLE", table)
-			t.Setenv("FLYX_TEST_BATCH", batch)
+			t.Setenv("FLUX_TEST_TABLE", table)
+			t.Setenv("FLUX_TEST_BATCH", batch)
 			script := RenderTable(NodePlan{Rules: []Rule{{ForwardID: 1, InPort: 1234, TargetHost: "127.0.0.1", TargetPort: 5678}}})
 			out, err := exec.Command("sh", "-c", buildApplyCommand(nft, script, true)).CombinedOutput()
 			if table == "both" {
@@ -47,7 +47,7 @@ if [ "$1" = '-f' ]; then cp "$2" "$FLYX_TEST_BATCH"; fi
 			}
 			want := table
 			if want == "" {
-				want = "flyx"
+				want = "flux"
 			}
 			if !strings.Contains(string(data), "table inet "+want+" {") || !strings.Contains(string(data), want+" forward:1") {
 				t.Fatalf("wrong table/comment identity: %s", data)
@@ -57,7 +57,7 @@ if [ "$1" = '-f' ]; then cp "$2" "$FLYX_TEST_BATCH"; fi
 }
 
 func TestCounterIdentityAliases(t *testing.T) {
-	for _, prefix := range []string{"flyx", "flvx"} {
+	for _, prefix := range []string{"flux", "flyx", "flvx"} {
 		sample, ok := ParseCounterComment(prefix + " forward:42 to-target tcp epoch")
 		if !ok || sample.ForwardID != 42 || sample.Epoch != "epoch" {
 			t.Fatalf("%s: %+v", prefix, sample)
@@ -70,38 +70,39 @@ func TestLegacyQuotaResumeUsesExistingTable(t *testing.T) {
 	log := filepath.Join(dir, "log")
 	nft := filepath.Join(dir, "nft")
 	fake := `#!/bin/sh
-echo "$*" >> "$FLYX_TEST_LOG"
+echo "$*" >> "$FLUX_TEST_LOG"
 if [ "$1 $2" = 'list table' ]; then [ "$4" = flvx_quota ]; exit $?; fi
 exit 0
 `
 	if err := os.WriteFile(nft, []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FLYX_TEST_LOG", log)
+	t.Setenv("FLUX_TEST_LOG", log)
 	if out, err := exec.Command("sh", "-c", buildSetBlockedCommand(nft, 443, false, true)).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, out)
 	}
 	data, _ := os.ReadFile(log)
-	if !strings.Contains(string(data), "delete element inet flvx_quota blocked_ports { 443 }") || strings.Contains(string(data), "delete element inet flyx_quota") {
+	if !strings.Contains(string(data), "delete element inet flvx_quota blocked_ports { 443 }") || strings.Contains(string(data), "delete element inet flux_quota") {
 		t.Fatalf("wrong quota resumed: %s", data)
 	}
 }
 
-// A node added after the rename never touches flvx tables: on a server that
-// also runs FLVX they belong to that panel.
+// A node added after the FLVX rename never touches flvx tables: on a server
+// that also runs FLVX they belong to that panel. flyx tables from 3.4-3.6
+// releases belong to our panel and are adopted seamlessly.
 func TestNewNodesIgnoreLegacyTables(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "log")
 	nft := filepath.Join(dir, "nft")
 	fake := `#!/bin/sh
-echo "$*" >> "$FLYX_TEST_LOG"
+echo "$*" >> "$FLUX_TEST_LOG"
 if [ "$1 $2" = 'list table' ]; then [ "$4" = flvx ] || [ "$4" = flvx_quota ]; exit $?; fi
 exit 0
 `
 	if err := os.WriteFile(nft, []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FLYX_TEST_LOG", log)
+	t.Setenv("FLUX_TEST_LOG", log)
 	script := RenderTable(NodePlan{Rules: []Rule{{ForwardID: 1, InPort: 1234, TargetHost: "127.0.0.1", TargetPort: 5678}}})
 	for _, command := range []string{
 		buildApplyCommand(nft, script, false),
@@ -116,7 +117,40 @@ exit 0
 	if strings.Contains(string(data), "flvx") {
 		t.Fatalf("touched another panel's table: %s", data)
 	}
-	if !strings.Contains(string(data), "add element inet flyx_quota blocked_ports") {
-		t.Fatalf("quota not applied to the FLYX table: %s", data)
+	if !strings.Contains(string(data), "add element inet flux_quota blocked_ports") {
+		t.Fatalf("quota not applied to the FLUX table: %s", data)
+	}
+}
+
+func TestNodesAdoptFlyxTablesEvenWithoutLegacyFlag(t *testing.T) {
+	dir := t.TempDir()
+	batch := filepath.Join(dir, "batch")
+	log := filepath.Join(dir, "log")
+	nft := filepath.Join(dir, "nft")
+	fake := `#!/bin/sh
+echo "$*" >> "$FLUX_TEST_LOG"
+if [ "$1 $2" = 'list table' ]; then [ "$4" = flyx ] || [ "$4" = flyx_quota ]; exit $?; fi
+if [ "$1" = '-f' ]; then cp "$2" "$FLUX_TEST_BATCH"; fi
+exit 0
+`
+	if err := os.WriteFile(nft, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FLUX_TEST_LOG", log)
+	t.Setenv("FLUX_TEST_BATCH", batch)
+	script := RenderTable(NodePlan{Rules: []Rule{{ForwardID: 1, InPort: 1234, TargetHost: "127.0.0.1", TargetPort: 5678}}})
+	if out, err := exec.Command("sh", "-c", buildApplyCommand(nft, script, false)).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	applied, _ := os.ReadFile(batch)
+	if !strings.Contains(string(applied), "table inet flyx {") || !strings.Contains(string(applied), "flyx forward:1") {
+		t.Fatalf("did not adopt flyx NAT table: %s", applied)
+	}
+	if out, err := exec.Command("sh", "-c", buildSetBlockedCommand(nft, 443, true, false)).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	calls, _ := os.ReadFile(log)
+	if !strings.Contains(string(calls), "add element inet flyx_quota blocked_ports") {
+		t.Fatalf("did not adopt flyx_quota table: %s", calls)
 	}
 }

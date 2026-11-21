@@ -34,7 +34,7 @@ func fakeTuneAutomation(t *testing.T) {
 	tuneMeasure = func(context.Context, *tuneDetection, int) (*tuneSample, error) { return &tuneSample{Mbps: 200}, nil }
 	tuneReadTraffic = func(string) (uint64, error) { return 0, nil }
 	tuneTrafficBaseline = 0
-	unit := filepath.Join(filepath.Dir(tuneBackupPath), "flyx-tuning-qdisc.service")
+	unit := filepath.Join(filepath.Dir(tuneBackupPath), "flux-tuning-qdisc.service")
 	tuneShapeUnitPath = func() string { return unit }
 	t.Setenv("FLUX_AGENT_CONTAINER", "1")
 	tuningTasks.Lock()
@@ -185,16 +185,16 @@ func TestTuneDeepRequiresRecentMeasurementAndTrafficBudget(t *testing.T) {
 }
 
 func TestTuneSampleParsingUsesReceiverAndRejectsInvalidData(t *testing.T) {
-	s, err := parseTuneSample("log\nFLYX_SAMPLE=1000 12 940\n")
+	s, err := parseTuneSample("log\nFLUX_SAMPLE=1000 12 940\n")
 	if err != nil || s.Mbps != 940 || s.Retransmits != 12 || s.LossPercent <= 0 {
 		t.Fatalf("sample: %+v %v", s, err)
 	}
 	for _, line := range []string{"0 0", "100 -1", "NaN 0 20", "100 0 NaN", "100 0 nope", "10 0 0", "+Inf 1", "oops"} {
-		if _, err = parseTuneSample("FLYX_SAMPLE=" + line); err == nil {
+		if _, err = parseTuneSample("FLUX_SAMPLE=" + line); err == nil {
 			t.Errorf("accepted invalid sample %q", line)
 		}
 	}
-	if s, err = parseTuneSample("FLYX_SAMPLE=100 0"); err != nil || s.Mbps != 100 {
+	if s, err = parseTuneSample("FLUX_SAMPLE=100 0"); err != nil || s.Mbps != 100 {
 		t.Fatalf("old iperf fallback: %+v %v", s, err)
 	}
 }
@@ -243,7 +243,7 @@ func TestTuneDeepInconclusiveNeverAppliesShape(t *testing.T) {
 	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
 		if name == "bash" && len(args) > 2 {
 			if args[2] == "sweep" {
-				return "FLYX_SWEEP_INCONCLUSIVE=1\n", errors.New("exit 3")
+				return "FLUX_SWEEP_INCONCLUSIVE=1\n", errors.New("exit 3")
 			}
 			if args[2] == "shape" {
 				shaped = true
@@ -273,7 +273,7 @@ func TestTuneDeepVerificationFailureRestoresPersistentShape(t *testing.T) {
 	base := tuneCommand
 	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
 		if name == "bash" && len(args) > 2 && args[2] == "sweep" {
-			return "FLYX_SWEEP_KNEE=220\nFLYX_SWEEP_RECOMMEND=210\n", nil
+			return "FLUX_SWEEP_KNEE=220\nFLUX_SWEEP_RECOMMEND=210\n", nil
 		}
 		return base(ctx, name, args...)
 	}
@@ -300,7 +300,7 @@ func TestTuneDeepCommitsOnlyHealthyShaping(t *testing.T) {
 			base := tuneCommand
 			tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
 				if name == "bash" && len(args) > 2 && args[2] == "sweep" {
-					return "FLYX_SWEEP_KNEE=220\nFLYX_SWEEP_RECOMMEND=210\n", nil
+					return "FLUX_SWEEP_KNEE=220\nFLUX_SWEEP_RECOMMEND=210\n", nil
 				}
 				return base(ctx, name, args...)
 			}
@@ -443,7 +443,7 @@ func TestTuneTCPFitBridgeMeasurementAndCleanScan(t *testing.T) {
 	}
 	out, err = run("sweep", "1000", "50")
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "FLYX_SWEEP_NO_KNEE=1") {
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "FLUX_SWEEP_NO_KNEE=1") {
 		t.Fatalf("clean scan: %v\n%s", err, out)
 	}
 	if _, err = os.Stat(marker); err != nil {
@@ -488,7 +488,7 @@ func TestTuneDeepInconclusiveKeepsSummary(t *testing.T) {
 	base := tuneCommand
 	tuneCommand = func(ctx context.Context, name string, args ...string) (string, error) {
 		if name == "bash" && len(args) > 2 && args[2] == "sweep" {
-			return "FLYX_SWEEP_INCONCLUSIVE=1\n", errors.New("exit 3")
+			return "FLUX_SWEEP_INCONCLUSIVE=1\n", errors.New("exit 3")
 		}
 		return base(ctx, name, args...)
 	}
@@ -515,7 +515,7 @@ func TestTuneDeepBudgetExcludesBackgroundTraffic(t *testing.T) {
 				return "", ctx.Err()
 			case <-time.After(1500 * time.Millisecond):
 			}
-			return "FLYX_SWEEP_NO_KNEE=1\n", errors.New("exit 3")
+			return "FLUX_SWEEP_NO_KNEE=1\n", errors.New("exit 3")
 		}
 		return base(ctx, name, args...)
 	}

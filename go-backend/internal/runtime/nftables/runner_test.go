@@ -20,7 +20,7 @@ func TestBuildApplyCommandStopsAfterValidationFailure(t *testing.T) {
 	fake := `#!/bin/sh
 echo "$*" >> "` + logPath + `"
 if [ "$1" = "list" ]; then
-  [ "${4:-}" != flvx ] || exit 1
+  [ "${4:-}" != flvx ] && [ "${4:-}" != flyx ] || exit 1
   exit 0
 fi
 if [ "$1" = "-c" ]; then
@@ -32,7 +32,7 @@ touch "` + applyMarker + `"
 		t.Fatalf("write fake nft: %v", err)
 	}
 
-	command := buildApplyCommand(nftPath, "table inet flyx { }", false)
+	command := buildApplyCommand(nftPath, "table inet flux { }", false)
 	result := exec.Command("sh", "-c", command)
 	if err := result.Run(); err == nil {
 		t.Fatal("expected validation failure")
@@ -64,7 +64,7 @@ exit 1
 		t.Fatalf("write fake nft: %v", err)
 	}
 
-	command := strings.Replace(buildCapabilityCheckCommand(nftPath, "flyx_capability_test"), "command -v nft", "command -v "+nftPath, 1)
+	command := strings.Replace(buildCapabilityCheckCommand(nftPath, "flux_capability_test"), "command -v nft", "command -v "+nftPath, 1)
 	result := exec.Command("sh", "-c", command)
 	if output, err := result.CombinedOutput(); err != nil {
 		t.Fatalf("capability command failed: %v: %s", err, output)
@@ -76,7 +76,7 @@ exit 1
 	if strings.Count(string(calls), "-c -f ") != 1 || strings.Contains(string(calls), "\n-f ") {
 		t.Fatalf("expected one check-only invocation, got calls:\n%s", calls)
 	}
-	if !strings.Contains(command, "table inet flyx_capability_test") || !strings.Contains(command, "meta l4proto tcp ct original proto-dst") {
+	if !strings.Contains(command, "table inet flux_capability_test") || !strings.Contains(command, "meta l4proto tcp ct original proto-dst") {
 		t.Fatalf("capability check does not contain representative rendered rules:\n%s", command)
 	}
 }
@@ -87,7 +87,7 @@ func TestBuildApplyCommandUsesAtomicReplacementBatch(t *testing.T) {
 	nftPath := filepath.Join(dir, "nft")
 	fake := `#!/bin/sh
 if [ "$1" = "list" ]; then
-  [ "${4:-}" != flvx ] || exit 1
+  [ "${4:-}" != flvx ] && [ "${4:-}" != flyx ] || exit 1
   exit 0
 fi
 if [ "$1" = "-f" ]; then
@@ -99,7 +99,7 @@ exit 0
 		t.Fatalf("write fake nft: %v", err)
 	}
 
-	script := "table inet flyx {\n  chain forward { }\n}"
+	script := "table inet flux {\n  chain forward { }\n}"
 	result := exec.Command("sh", "-c", buildApplyCommand(nftPath, script, false))
 	if output, err := result.CombinedOutput(); err != nil {
 		t.Fatalf("apply command failed: %v: %s", err, output)
@@ -108,7 +108,7 @@ exit 0
 	if err != nil {
 		t.Fatalf("read applied batch: %v", err)
 	}
-	want := "delete table inet flyx\n" + script + "\n"
+	want := "delete table inet flux\n" + script + "\n"
 	if string(batch) != want {
 		t.Fatalf("atomic batch = %q, want %q", batch, want)
 	}

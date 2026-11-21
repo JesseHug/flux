@@ -20,14 +20,16 @@ func TestDockerInstallCommand(t *testing.T) {
 		name, existing, mount, pullFailure, wantName, wantMount, wantImage string
 		fail                                                               bool
 	}{
-		{name: "fresh", wantName: "flyx-agent", wantMount: "/etc/flyx-agent:/etc/flyx-agent", wantImage: "flyx-agent"},
-		{name: "legacy", existing: "flux_agent", mount: "/srv/old agent", wantName: "flux_agent", wantMount: "/srv/old agent:/etc/flux_agent", wantImage: "flyx-agent"},
-		// flux-panel / FLVX agents share the container name; they are left alone.
-		{name: "foreign-legacy", existing: "flux_agent=ghcr.io/sagit-chu/flux-agent:2.0", mount: "/etc/flux_agent", wantName: "flyx-agent", wantMount: "/etc/flyx-agent:/etc/flyx-agent", wantImage: "flyx-agent"},
-		{name: "foreign-legacy-and-current", existing: "flyx-agent,flux_agent=ghcr.io/sagit-chu/flux-agent:2.0", mount: "agent-volume", wantName: "flyx-agent", wantMount: "agent-volume:/etc/flyx-agent", wantImage: "flyx-agent"},
-		{name: "repeat", existing: "flyx-agent", mount: "agent-volume", wantName: "flyx-agent", wantMount: "agent-volume:/etc/flyx-agent", wantImage: "flyx-agent"},
-		{name: "historical-image", pullFailure: "canonical", wantName: "flyx-agent", wantMount: "/etc/flyx-agent:/etc/flux_agent", wantImage: "flux-agent"},
-		{name: "ambiguous", existing: "flyx-agent,flux_agent", fail: true},
+		{name: "fresh", wantName: "flux-agent", wantMount: "/etc/flux-agent:/etc/flux-agent", wantImage: "flux-agent"},
+		{name: "mid-flyx", existing: "flyx-agent", mount: "/etc/flyx-agent", wantName: "flyx-agent", wantMount: "/etc/flyx-agent:/etc/flyx-agent", wantImage: "flux-agent"},
+		{name: "legacy", existing: "flux_agent", mount: "/srv/old agent", wantName: "flux_agent", wantMount: "/srv/old agent:/etc/flux_agent", wantImage: "flux-agent"},
+		// Foreign FLVX agents share the flux_agent container name; they are left alone.
+		{name: "foreign-legacy", existing: "flux_agent=ghcr.io/sagit-chu/flux-agent:2.0", mount: "/etc/flux_agent", wantName: "flux-agent", wantMount: "/etc/flux-agent:/etc/flux-agent", wantImage: "flux-agent"},
+		{name: "foreign-legacy-and-current", existing: "flux-agent,flux_agent=ghcr.io/sagit-chu/flux-agent:2.0", mount: "agent-volume", wantName: "flux-agent", wantMount: "agent-volume:/etc/flux-agent", wantImage: "flux-agent"},
+		{name: "repeat", existing: "flux-agent", mount: "agent-volume", wantName: "flux-agent", wantMount: "agent-volume:/etc/flux-agent", wantImage: "flux-agent"},
+		{name: "historical-image", pullFailure: "canonical", wantName: "flux-agent", wantMount: "/etc/flux-agent:/etc/flyx-agent", wantImage: "flyx-agent"},
+		{name: "ambiguous-mid", existing: "flux-agent,flyx-agent", fail: true},
+		{name: "ambiguous-legacy", existing: "flux-agent,flux_agent", fail: true},
 		{name: "missing-mount", existing: "flux_agent", fail: true},
 		{name: "multiple-mounts", existing: "flux_agent", mount: "one\ntwo", fail: true},
 		{name: "pull-failure", existing: "flux_agent", mount: "keep-me", pullFailure: "all", fail: true},
@@ -47,7 +49,7 @@ if args[0]=="inspect":
  else:print(os.environ["FLYX_TEST_MOUNT"])
 elif args[0]=="pull":
  failure=os.environ["FLYX_TEST_PULL_FAILURE"]
- if failure=="all" or (failure=="canonical" and "/flyx-agent:" in args[1]):sys.exit(1)
+ if failure=="all" or (failure=="canonical" and "/flux-agent:" in args[1]):sys.exit(1)
 `
 			if err := os.WriteFile(filepath.Join(dir, "docker"), []byte(fake), 0o755); err != nil {
 				t.Fatal(err)
@@ -123,26 +125,27 @@ func TestDockerComposeInstallCommand(t *testing.T) {
 
 	cmd := dockerComposeInstallCommand("3.4.0", "panel.example.com:6365", "s3cret", false)
 	for _, want := range []string{
-		"mkdir -p /opt/docker/flyx-agent",
-		"(umask 077 && cat > /opt/docker/flyx-agent/docker-compose.yaml) <<'EOF'",
-		"/opt/docker/flyx-agent/docker-compose.yaml",
-		"image: ghcr.io/kure29/flyx-agent:3.4.0",
-		"container_name: flyx-agent",
+		"mkdir -p /opt/docker/flux-agent",
+		"(umask 077 && cat > /opt/docker/flux-agent/docker-compose.yaml) <<'EOF'",
+		"/opt/docker/flux-agent/docker-compose.yaml",
+		"image: ghcr.io/kure29/flux-agent:3.4.0",
+		"container_name: flux-agent",
 		"restart: unless-stopped",
 		"network_mode: host",
 		"      - NET_ADMIN",
-		"      - /etc/flyx-agent:/etc/flyx-agent",
-		`FLYX_AGENT_DATA_DIR: "/etc/flyx-agent"`,
+		"      - /etc/flux-agent:/etc/flux-agent",
+		`FLUX_AGENT_DATA_DIR: "/etc/flux-agent"`,
 		`FLYX_AGENT_ADDR: "panel.example.com:6365"`,
 		`FLUX_AGENT_ADDR: "panel.example.com:6365"`,
 		`FLYX_AGENT_SECRET: "s3cret"`,
 		`FLUX_AGENT_SECRET: "s3cret"`,
-		"chmod 600 /opt/docker/flyx-agent/docker-compose.yaml",
+		"chmod 600 /opt/docker/flux-agent/docker-compose.yaml",
+		"if docker container inspect flyx-agent >/dev/null 2>&1; then",
 		`case "$(docker inspect -f '{{.Config.Image}}' flux_agent 2>/dev/null || true)" in ghcr.io/kure29/*)`,
 		"检测到旧版 flux_agent 容器",
-		"if docker container inspect flyx-agent >/dev/null 2>&1; then",
-		"docker rm -f flyx-agent >/dev/null",
-		"docker compose -f /opt/docker/flyx-agent/docker-compose.yaml up -d",
+		"if docker container inspect flux-agent >/dev/null 2>&1; then",
+		"docker rm -f flux-agent >/dev/null",
+		"docker compose -f /opt/docker/flux-agent/docker-compose.yaml up -d",
 	} {
 		if !strings.Contains(cmd, want) {
 			t.Errorf("missing %q in %s", want, cmd)
@@ -153,9 +156,11 @@ func TestDockerComposeInstallCommand(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"/opt/docker/docker-compose.yaml",
+		"container_name: flyx-agent",
 		"container_name: flux_agent",
 		"/etc/flux_agent:/etc/flux_agent",
-		"image: ghcr.io/kure29/flux-agent:3.4.0",
+		"/etc/flyx-agent:/etc/flyx-agent",
+		"image: ghcr.io/kure29/flyx-agent:3.4.0",
 	} {
 		if strings.Contains(cmd, unwanted) {
 			t.Errorf("unexpected %q in %s", unwanted, cmd)
@@ -171,7 +176,7 @@ func TestDockerComposeInstallCommand(t *testing.T) {
 func TestDockerComposeInstallChecksLegacyContainerBeforeWriting(t *testing.T) {
 	cmd := dockerComposeInstallCommand("3.4.0", "panel.example.com:6365", "s3cret", false)
 	legacy := strings.Index(cmd, "docker inspect -f '{{.Config.Image}}' flux_agent")
-	write := strings.Index(cmd, "cat > /opt/docker/flyx-agent/docker-compose.yaml")
+	write := strings.Index(cmd, "cat > /opt/docker/flux-agent/docker-compose.yaml")
 	if legacy < 0 || write < 0 || legacy > write {
 		t.Fatalf("a refused install must not leave a compose file behind:\n%s", cmd)
 	}
@@ -208,7 +213,7 @@ func TestDockerComposeInstallFileParses(t *testing.T) {
 	if err := json.Unmarshal(out, &cfg); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	svc := cfg.Services["flyx-agent"]
+	svc := cfg.Services["flux-agent"]
 	if !svc.Privileged {
 		t.Error("privileged switch lost")
 	}

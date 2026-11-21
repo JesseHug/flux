@@ -4463,5 +4463,5 @@ menu_loop(){
 # ── 入口 ────────────────────────────────────────────────────────────────────
 usage(){ awk 'NR==1 {next} /^#/ {sub(/^# ?/, ""); print; next} {exit}' "$0"; }
 
-# FLYX: library only; the upstream interactive/CLI entry point is omitted.
+# FLUX: library only; the upstream interactive/CLI entry point is omitted.
 

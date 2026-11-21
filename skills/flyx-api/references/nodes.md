@@ -207,7 +207,7 @@ Reorder nodes (for display purposes).
 
 ## POST /api/v1/node/releases
 
-List available FLYX agent releases.
+List available FLUX agent releases.
 
 **Request:** `{}`
 
@@ -259,7 +259,7 @@ Rollback node agent to previous version.
 
 ```bash
 # 1. Create node
-RESPONSE=$(curl -s -X POST "${FLYX_BASE_URL}/api/v1/node/create" \
+RESPONSE=$(curl -s -X POST "${FLUX_BASE_URL}/api/v1/node/create" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{"name":"SG-Node-1","serverIp":"203.0.113.10"}')
@@ -267,7 +267,7 @@ RESPONSE=$(curl -s -X POST "${FLYX_BASE_URL}/api/v1/node/create" \
 NODE_ID=$(echo "$RESPONSE" | jq -r '.data.id')
 
 # 2. Get install command
-curl -s -X POST "${FLYX_BASE_URL}/api/v1/node/install" \
+curl -s -X POST "${FLUX_BASE_URL}/api/v1/node/install" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d "{\"id\":${NODE_ID}}"
@@ -275,7 +275,7 @@ curl -s -X POST "${FLYX_BASE_URL}/api/v1/node/install" \
 # 3. Run install command on target server (manual step)
 
 # 4. Verify node is online
-curl -s -X POST "${FLYX_BASE_URL}/api/v1/node/list" \
+curl -s -X POST "${FLUX_BASE_URL}/api/v1/node/list" \
   -H "Authorization: ${TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{}' | jq ".data.list[] | select(.id == $NODE_ID) | {name, status}"

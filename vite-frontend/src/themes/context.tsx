@@ -122,7 +122,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const resetTheme = useCallback(() => {
     deactivateTheme();
     reapplyActiveTheme();
-    removeStoredValue(localStorage, "flyx:active-theme");
+    removeStoredValue(localStorage, "flux:active-theme");
   }, []);
   const setMode = useCallback((m: ThemeMode) => {
     saveMode(m);

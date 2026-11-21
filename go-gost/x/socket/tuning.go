@@ -166,12 +166,12 @@ func tuneGroupsFor(s tuneSizes) []tuneGroup {
 var (
 	tunePageSize   = int64(os.Getpagesize())
 	tuneProcRoot   = "/proc/sys"
-	tuneConfPath   = "/etc/sysctl.d/99-flyx-tuning.conf"
+	tuneConfPath   = "/etc/sysctl.d/99-flux-tuning.conf"
 	tuneBackupPath = filepath.Join(identity.DataDir(), "tuning-backup.json")
 	tuneParamsPath = filepath.Join(identity.DataDir(), "tuning-params.json")
 	tuneMeminfo    = "/proc/meminfo"
 	// tuneBBRModule loads tcp_bbr at boot, before sysctl sets it.
-	tuneBBRModule = "/etc/modules-load.d/flyx-bbr.conf"
+	tuneBBRModule = "/etc/modules-load.d/flux-bbr.conf"
 	tuneModprobe  = func(module string) error { return exec.Command("modprobe", module).Run() }
 	tuneWrite     = writeSysctl
 )
@@ -500,20 +500,34 @@ func applyTuning(groupIDs []string, p tuneParams) (tuneStatus, error) {
 		return tuneStatus{}, err
 	}
 	if len(conf) > 0 {
-		body := fmt.Sprintf("# Written by the FLYX panel (节点调优); remove via the panel to restore.\n# 带宽 %d Mbps, 延迟 %d ms\n%s\n",
+		body := fmt.Sprintf("# Written by the FLUX panel (节点调优); remove via the panel to restore.\n# 带宽 %d Mbps, 延迟 %d ms\n%s\n",
 			p.BandwidthMbps, p.RTTMs, strings.Join(conf, "\n"))
 		if err := writeFileAtomic(tuneConfPath, []byte(body), 0o644); err != nil {
 			return tuneStatus{}, fmt.Errorf("写入 %s 失败: %v", tuneConfPath, err)
 		}
-	} else if err := os.Remove(tuneConfPath); err != nil && !os.IsNotExist(err) {
-		return tuneStatus{}, err
+		if tuneConfPath == "/etc/sysctl.d/99-flux-tuning.conf" {
+			_ = os.Remove("/etc/sysctl.d/99-flyx-tuning.conf")
+		}
+	} else {
+		if err := os.Remove(tuneConfPath); err != nil && !os.IsNotExist(err) {
+			return tuneStatus{}, err
+		}
+		if tuneConfPath == "/etc/sysctl.d/99-flux-tuning.conf" {
+			_ = os.Remove("/etc/sysctl.d/99-flyx-tuning.conf")
+		}
 	}
 	if chosen["bbr"] && !failed["net.ipv4.tcp_congestion_control"] {
 		if err := os.MkdirAll(filepath.Dir(tuneBBRModule), 0o755); err == nil {
 			_ = writeFileAtomic(tuneBBRModule, []byte("tcp_bbr\n"), 0o644)
+			if tuneBBRModule == "/etc/modules-load.d/flux-bbr.conf" {
+				_ = os.Remove("/etc/modules-load.d/flyx-bbr.conf")
+			}
 		}
 	} else {
 		_ = os.Remove(tuneBBRModule)
+		if tuneBBRModule == "/etc/modules-load.d/flux-bbr.conf" {
+			_ = os.Remove("/etc/modules-load.d/flyx-bbr.conf")
+		}
 	}
 	if len(chosen) > 0 {
 		b, _ := json.Marshal(p)

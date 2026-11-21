@@ -33,8 +33,8 @@ func loadConfig(path string) (*agentConfig, error) {
 }
 
 func applyEnvConfig(path string) error {
-	addr := identity.Env("FLYX_AGENT_ADDR", "FLUX_AGENT_ADDR")
-	secret := identity.Env("FLYX_AGENT_SECRET", "FLUX_AGENT_SECRET")
+	addr := identity.Env("FLUX_AGENT_ADDR", "FLYX_AGENT_ADDR")
+	secret := identity.Env("FLUX_AGENT_SECRET", "FLYX_AGENT_SECRET")
 	if addr == "" && secret == "" {
 		return nil
 	}

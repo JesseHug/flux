@@ -11,7 +11,7 @@ import (
 
 func openTrafficPostgresTest(t *testing.T) *Repository {
 	t.Helper()
-	dsn := config.IdentityEnv("FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
+	dsn := config.IdentityEnv("FLUX_POSTGRES_TEST_DSN", "FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires temporary PostgreSQL")
 	}

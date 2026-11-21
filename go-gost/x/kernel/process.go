@@ -109,7 +109,7 @@ func (p *process) supervise() {
 		p.lastErr = msg
 		p.restarts++
 		p.mu.Unlock()
-		p.logs.add(p.prefix + "[flyx] " + msg)
+		p.logs.add(p.prefix + "[flux] " + msg)
 
 		if time.Since(began) > stableAfter {
 			backoff = time.Second

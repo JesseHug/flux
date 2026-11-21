@@ -42,7 +42,7 @@ func tuneQueueReplay(iface, out string) (string, error) {
 	if root == "" {
 		return "", fmt.Errorf("无法读取网卡原始队列")
 	}
-	script := "#!/bin/sh\nset -eu\n# Original queues, captured before FLYX deep tuning.\ntc qdisc del dev " + tuneShellQuote(iface) + " root 2>/dev/null || true\n"
+	script := "#!/bin/sh\nset -eu\n# Original queues, captured before FLUX deep tuning.\ntc qdisc del dev " + tuneShellQuote(iface) + " root 2>/dev/null || true\n"
 	// Hardware mq roots with handle 0 are recreated by the kernel on delete.
 	// Query the resulting major handle so leaves bind to the actual queues.
 	if root == "mq" {
@@ -264,8 +264,8 @@ func executeDeepTuning(ctx context.Context, d *tuneDetection, maxGB float64) (er
 	}
 	values := map[string]string{}
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "FLYX_SWEEP_") {
-			kv := strings.SplitN(strings.TrimPrefix(line, "FLYX_SWEEP_"), "=", 2)
+		if strings.HasPrefix(line, "FLUX_SWEEP_") {
+			kv := strings.SplitN(strings.TrimPrefix(line, "FLUX_SWEEP_"), "=", 2)
 			if len(kv) == 2 {
 				values[kv[0]] = kv[1]
 			}
@@ -355,7 +355,7 @@ func restoreTuneShapeFiles(saved []tuneShapeFile) error {
 		} else {
 			if f.Path == tuneShapeUnitPath() {
 				if _, err := os.Stat(f.Path); err == nil && !InContainer() {
-					if _, err = tuneCommand(ctx, "systemctl", "disable", "--now", "flyx-tuning-qdisc.service"); err != nil {
+					if _, err = tuneCommand(ctx, "systemctl", "disable", "--now", filepath.Base(f.Path)); err != nil {
 						return err
 					}
 				}
@@ -405,7 +405,12 @@ func tuneShapeScript(iface string, rate int) string {
 	return fmt.Sprintf("#!/bin/sh\nset -eu\ntc qdisc replace dev %s root handle 1: htb default 10\ntc class replace dev %s parent 1: classid 1:10 htb rate %s ceil %s burst %d cburst %d quantum 1514\ntc qdisc replace dev %s parent 1:10 handle 10: fq limit 40960 flow_limit 8192 maxrate %s\n", q, q, r, r, burst, burst, q, r)
 }
 
-var tuneShapeUnitPath = func() string { return "/etc/systemd/system/flyx-tuning-qdisc.service" }
+const (
+	tuneShapeUnitName       = "flux-tuning-qdisc.service"
+	legacyTuneShapeUnitName = "flyx-tuning-qdisc.service"
+)
+
+var tuneShapeUnitPath = func() string { return "/etc/systemd/system/" + tuneShapeUnitName }
 
 func persistTuneShape(ctx context.Context, d *tuneDetection, rate int) error {
 	_, err := callTuneEngine(ctx, "shape", d, strconv.Itoa(rate))
@@ -426,14 +431,19 @@ func persistTuneShape(ctx context.Context, d *tuneDetection, rate int) error {
 	if !commandExists("systemctl") {
 		return fmt.Errorf("缺少 systemd，无法持久保存整形配置")
 	}
-	unit := "[Unit]\nDescription=FLYX egress tuning\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=" + script + "\n[Install]\nWantedBy=multi-user.target\n"
+	unit := "[Unit]\nDescription=FLUX egress tuning\nAfter=network-online.target\nWants=network-online.target\n[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=" + script + "\n[Install]\nWantedBy=multi-user.target\n"
 	if err = writeFileAtomic(tuneShapeUnitPath(), []byte(unit), 0o644); err != nil {
 		return err
+	}
+	legacyUnit := filepath.Join(filepath.Dir(tuneShapeUnitPath()), legacyTuneShapeUnitName)
+	if _, e := os.Stat(legacyUnit); e == nil {
+		_, _ = tuneCommand(ctx, "systemctl", "disable", "--now", legacyTuneShapeUnitName)
+		_ = os.Remove(legacyUnit)
 	}
 	if _, err = tuneCommand(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
-	_, err = tuneCommand(ctx, "systemctl", "enable", "flyx-tuning-qdisc.service")
+	_, err = tuneCommand(ctx, "systemctl", "enable", filepath.Base(tuneShapeUnitPath()))
 	return err
 }
 
@@ -458,15 +468,17 @@ func restoreAutomaticTuning(ctx context.Context) error {
 			return err
 		}
 		if !InContainer() {
-			if _, e := os.Stat(tuneShapeUnitPath()); e == nil {
-				if _, err = tuneCommand(ctx, "systemctl", "disable", "--now", "flyx-tuning-qdisc.service"); err != nil {
-					return err
-				}
-				if err = os.Remove(tuneShapeUnitPath()); err != nil {
-					return err
-				}
-				if _, err = tuneCommand(ctx, "systemctl", "daemon-reload"); err != nil {
-					return err
+			for _, unitPath := range []string{tuneShapeUnitPath(), filepath.Join(filepath.Dir(tuneShapeUnitPath()), legacyTuneShapeUnitName)} {
+				if _, e := os.Stat(unitPath); e == nil {
+					if _, err = tuneCommand(ctx, "systemctl", "disable", "--now", filepath.Base(unitPath)); err != nil {
+						return err
+					}
+					if err = os.Remove(unitPath); err != nil {
+						return err
+					}
+					if _, err = tuneCommand(ctx, "systemctl", "daemon-reload"); err != nil {
+						return err
+					}
 				}
 			}
 		}

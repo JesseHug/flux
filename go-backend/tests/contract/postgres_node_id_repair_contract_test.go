@@ -20,9 +20,9 @@ import (
 )
 
 func TestPostgresNodeCreateRepairsMissingIDDefaultContract(t *testing.T) {
-	baseDSN := strings.TrimSpace(config.IdentityEnv("FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN"))
+	baseDSN := strings.TrimSpace(config.IdentityEnv("FLUX_POSTGRES_TEST_DSN", "FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN"))
 	if baseDSN == "" {
-		t.Skip("set FLYX_POSTGRES_TEST_DSN to run postgres contract tests")
+		t.Skip("set FLUX_POSTGRES_TEST_DSN to run postgres contract tests")
 	}
 
 	schemaName := "contract_node_id_" + strconv.FormatInt(time.Now().UnixNano(), 36)

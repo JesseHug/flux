@@ -37,7 +37,10 @@ type Rendered struct {
 	// UserMarks lists the users whose outgoing traffic carries UserMark, so
 	// the agent can count it per user.
 	UserMarks []int64 `json:"userMarks,omitempty"`
-	Hash      string  `json:"hash"`
+	// StatsAddr is the loopback gRPC address where the kernel exposes its
+	// StatsService when KernelStats is enabled.
+	StatsAddr string `json:"statsAddr,omitempty"`
+	Hash      string `json:"hash"`
 }
 
 // RenderOptions are panel settings a kernel config depends on.
@@ -60,6 +63,9 @@ type RenderOptions struct {
 	// "operation not permitted". Users then share the default outbounds and
 	// their traffic is not counted per user (which needs nftables anyway).
 	NoUserMarks bool
+	// KernelStats enables Xray's built-in loopback StatsService for per-user
+	// accounting instead of socket marks / nftables.
+	KernelStats bool
 }
 
 // Render produces the kernel configuration for the given enabled inbounds.
@@ -73,7 +79,8 @@ func RenderWith(kernelType string, inbounds []Inbound, opts RenderOptions) (Rend
 	sorted := make([]Inbound, len(inbounds))
 	copy(sorted, inbounds)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-	if opts.NoUserMarks {
+	useXrayStats := kernelType == TypeXray && opts.KernelStats
+	if opts.NoUserMarks || useXrayStats {
 		for i := range sorted {
 			sorted[i].noUserMarks = true
 		}
@@ -87,12 +94,15 @@ func RenderWith(kernelType string, inbounds []Inbound, opts RenderOptions) (Rend
 	var out Rendered
 	switch kernelType {
 	case TypeXray:
-		content, err := renderXray(sorted)
+		content, err := renderXray(sorted, opts)
 		if err != nil {
 			return Rendered{}, err
 		}
 		out.Files = []File{{Name: "config.json", Content: content}}
 		out.Args = []string{"run", "-c", "{RUN_DIR}/config.json"}
+		if useXrayStats {
+			out.StatsAddr = xrayStatsAddr
+		}
 	case TypeSingbox:
 		content, err := renderSingbox(sorted, opts)
 		if err != nil {
@@ -133,6 +143,10 @@ func hashRendered(r Rendered) string {
 	for _, e := range r.Extras {
 		h.Write([]byte(e))
 		h.Write([]byte{2})
+	}
+	if r.StatsAddr != "" {
+		h.Write([]byte(r.StatsAddr))
+		h.Write([]byte{3})
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

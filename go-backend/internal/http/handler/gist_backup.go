@@ -45,7 +45,8 @@ const (
 	gistConfigLastError  = "gist_last_error"
 	gistConfigLastHash   = "gist_last_hash"
 
-	gistFileName       = "flyx-backup.json"
+	gistFileName       = "flux-backup.json"
+	legacyGistFileName = "flyx-backup.json"
 	gistMaxBackupBytes = 20 << 20
 	notifyEventBackup  = "backup_failed"
 )
@@ -62,9 +63,9 @@ var (
 	gistMu            sync.Mutex
 )
 
-// gistAPIBase is GitHub's API; FLYX_GIST_API_BASE points tests elsewhere.
+// gistAPIBase is GitHub's API; FLUX_GIST_API_BASE (or legacy FLYX_GIST_API_BASE / FLVX_GIST_API_BASE) points tests elsewhere.
 func gistAPIBase() string {
-	if v := strings.TrimRight(strings.TrimSpace(config.IdentityEnv("FLYX_GIST_API_BASE", "FLVX_GIST_API_BASE")), "/"); v != "" {
+	if v := strings.TrimRight(strings.TrimSpace(config.IdentityEnv("FLUX_GIST_API_BASE", "FLYX_GIST_API_BASE", "FLVX_GIST_API_BASE")), "/"); v != "" {
 		return v
 	}
 	return "https://api.github.com"
@@ -86,15 +87,16 @@ func gistInt64(cfg map[string]string, key string) int64 {
 // --- encryption ---
 
 type gistEnvelope struct {
-	Format string `json:"flyx"`
-	V      int    `json:"v"`
-	KDF    string `json:"kdf"`
-	N      int    `json:"n"`
-	R      int    `json:"r"`
-	P      int    `json:"p"`
-	Salt   string `json:"salt"`
-	Nonce  string `json:"nonce"`
-	Data   string `json:"data"`
+	Format       string `json:"flux,omitempty"`
+	LegacyFormat string `json:"flyx,omitempty"`
+	V            int    `json:"v"`
+	KDF          string `json:"kdf"`
+	N            int    `json:"n"`
+	R            int    `json:"r"`
+	P            int    `json:"p"`
+	Salt         string `json:"salt"`
+	Nonce        string `json:"nonce"`
+	Data         string `json:"data"`
 }
 
 const gistEnvelopeFormat = "encrypted-backup"
@@ -134,7 +136,7 @@ func gistEncrypt(plain []byte, password string) ([]byte, error) {
 // an encrypted envelope (which needs the password).
 func gistOpen(content []byte, password string) ([]byte, bool, error) {
 	var env gistEnvelope
-	if json.Unmarshal(content, &env) != nil || env.Format != gistEnvelopeFormat {
+	if json.Unmarshal(content, &env) != nil || (env.Format != gistEnvelopeFormat && env.LegacyFormat != gistEnvelopeFormat) {
 		return content, false, nil
 	}
 	if password == "" {
@@ -209,7 +211,7 @@ func gistRequest(ctx context.Context, method, url, token string, body interface{
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	req.Header.Set("User-Agent", "flyx-panel")
+	req.Header.Set("User-Agent", "flux-panel")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -339,7 +341,7 @@ func (h *Handler) gistUploadLocked(ctx context.Context, cfg map[string]string, t
 		}
 	}
 	if id == "" {
-		body := map[string]interface{}{"description": "FLYX 面板备份", "public": false, "files": files}
+		body := map[string]interface{}{"description": "FLUX 面板备份", "public": false, "files": files}
 		if err := gistRequest(ctx, http.MethodPost, gistAPIBase()+"/gists", token, body, &doc); err != nil {
 			if errors.Is(err, errGistNotFound) {
 				return gistUploadResult{}, errText("GitHub 找不到接口，请检查令牌权限")
@@ -572,7 +574,10 @@ func (h *Handler) gistBackupRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	file, ok := doc.Files[gistFileName]
 	if !ok {
-		response.WriteJSON(w, response.ErrDefault("这个版本里没有 FLYX 备份文件"))
+		file, ok = doc.Files[legacyGistFileName]
+	}
+	if !ok {
+		response.WriteJSON(w, response.ErrDefault("这个版本里没有 FLUX 备份文件"))
 		return
 	}
 	content, err := gistContent(r.Context(), token, file)

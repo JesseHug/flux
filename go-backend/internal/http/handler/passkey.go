@@ -46,7 +46,7 @@ func (u passkeyUser) WebAuthnDisplayName() string                { return u.name
 func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.credentials }
 
 func passkeyConfig() (*webauthn.WebAuthn, string) {
-	raw := strings.TrimSpace(config.IdentityEnv("FLYX_WEBAUTHN_ORIGIN", "FLVX_WEBAUTHN_ORIGIN"))
+	raw := strings.TrimSpace(config.IdentityEnv("FLUX_WEBAUTHN_ORIGIN", "FLYX_WEBAUTHN_ORIGIN", "FLVX_WEBAUTHN_ORIGIN"))
 	u, err := url.Parse(raw)
 	if err != nil || u == nil || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return nil, ""
@@ -58,7 +58,7 @@ func passkeyConfig() (*webauthn.WebAuthn, string) {
 	origin := u.Scheme + "://" + u.Host
 	wa, err := webauthn.New(&webauthn.Config{
 		RPID:                   host,
-		RPDisplayName:          "FLYX",
+		RPDisplayName:          "FLUX",
 		RPOrigins:              []string{origin},
 		AuthenticatorSelection: protocol.AuthenticatorSelection{UserVerification: protocol.VerificationRequired, ResidentKey: protocol.ResidentKeyRequirementRequired},
 		Timeouts: webauthn.TimeoutsConfig{

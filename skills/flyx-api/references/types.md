@@ -274,16 +274,16 @@ interface BackupExport {
 ## Client Helper Class
 
 ```typescript
-class FlvxClient {
+class FluxClient {
   private baseUrl: string;
   private username: string;
   private password: string;
   private token?: string;
 
   constructor(baseUrl?: string, username?: string, password?: string) {
-    this.baseUrl = baseUrl ?? process.env.FLYX_BASE_URL ?? "";
-    this.username = username ?? process.env.FLYX_USERNAME ?? "";
-    this.password = password ?? process.env.FLYX_PASSWORD ?? "";
+    this.baseUrl = baseUrl ?? process.env.FLUX_BASE_URL ?? "";
+    this.username = username ?? process.env.FLUX_USERNAME ?? "";
+    this.password = password ?? process.env.FLUX_PASSWORD ?? "";
   }
 
   private async ensureToken(): Promise<void> {

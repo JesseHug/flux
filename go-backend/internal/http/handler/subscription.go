@@ -409,6 +409,12 @@ func (h *Handler) syncSubscriptions(now time.Time) {
 	for i := range subs {
 		s := &subs[i]
 		if subDueReset(s, now) {
+			if c == nil {
+				if c, err = h.loadSubContext(); err != nil {
+					return
+				}
+			}
+			h.pollSubscriptionNodes(c, s)
 			if err := h.repo.ResetSubscriptionTraffic(s.ID, now.UnixMilli()); err == nil {
 				s.UploadBytes, s.DownloadBytes = 0, 0
 				if h.notifier != nil {
@@ -754,6 +760,32 @@ func (h *Handler) resetSubscriptionLink(s *model.Subscription) (*subContext, []i
 	return c, push, nil
 }
 
+// pollSubscriptionNodes drains pending traffic counters from online non-lite
+// nodes serving this subscription without re-entering syncSubscriptions, so a
+// traffic reset never leaks pre-reset unpolled bytes into the new cycle.
+func (h *Handler) pollSubscriptionNodes(c *subContext, s *model.Subscription) {
+	if h == nil || c == nil || s == nil || !isShare(s) {
+		return
+	}
+	byID := make(map[int64]model.NodeInbound, len(c.rows))
+	for _, row := range c.rows {
+		byID[row.ID] = row
+	}
+	seen := make(map[int64]bool)
+	for _, inboundID := range c.inboundIDs(s) {
+		row, ok := byID[inboundID]
+		if !ok || row.NodeID <= 0 || seen[row.NodeID] {
+			continue
+		}
+		seen[row.NodeID] = true
+		node, err := h.repo.GetNodeByID(row.NodeID)
+		if err != nil || node == nil || node.Status != 1 || isLiteForwardMode(node.ForwardMode) {
+			continue
+		}
+		h.pollNodeKernelsWith(row.NodeID, false, false)
+	}
+}
+
 // subscriptionResetTraffic zeroes a share subscription's traffic and puts
 // it back on the nodes if the limit had cut it off.
 func (h *Handler) subscriptionResetTraffic(w http.ResponseWriter, r *http.Request) {
@@ -765,6 +797,9 @@ func (h *Handler) subscriptionResetTraffic(w http.ResponseWriter, r *http.Reques
 	if err != nil || s == nil {
 		response.WriteJSON(w, response.ErrDefault("订阅不存在"))
 		return
+	}
+	if c, err := h.loadSubContext(); err == nil {
+		h.pollSubscriptionNodes(c, s)
 	}
 	now := time.Now()
 	if err := h.repo.ResetSubscriptionTraffic(id, now.UnixMilli()); err != nil {

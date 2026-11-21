@@ -8,12 +8,12 @@ import (
 )
 
 func TestGistEncryptRoundTrip(t *testing.T) {
-	plain := []byte(`{"version":"1.0","configs":{"app_name":"FLYX"}}`)
+	plain := []byte(`{"version":"1.0","configs":{"app_name":"FLUX"}}`)
 	sealed, err := gistEncrypt(plain, "hunter2")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(sealed), "app_name") || !strings.Contains(string(sealed), `"flyx": "encrypted-backup"`) {
+	if strings.Contains(string(sealed), "app_name") || !strings.Contains(string(sealed), `"flux": "encrypted-backup"`) {
 		t.Fatalf("not an encrypted envelope: %s", sealed)
 	}
 	got, encrypted, err := gistOpen(sealed, "hunter2")

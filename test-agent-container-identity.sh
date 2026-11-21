@@ -14,14 +14,19 @@ chmod +x "$fixture/agent"
 run_agent() {
   docker run --rm \
     -v "$ROOT_DIR/go-gost/docker/entrypoint.sh:/entrypoint.sh:ro" \
-    -v "$fixture/agent:/usr/local/bin/flyx-agent:ro" \
-    -e FLYX_AGENT_IMAGE_VERSION="${image_version:-next}" \
+    -v "$fixture/agent:/usr/local/bin/flux-agent:ro" \
+    -e FLUX_AGENT_IMAGE_VERSION="${image_version:-next}" \
     "$@" alpine:3.22 sh /entrypoint.sh
 }
 
-out=$(run_agent -v "$fixture/current:/etc/flyx-agent")
+out=$(run_agent -v "$fixture/current:/etc/flux-agent")
+[[ "$out" == $'image-binary\n/etc/flux-agent' ]]
+[[ -x "$fixture/current/flux-agent" ]]
+
+mkdir -p "$fixture/mid"
+out=$(run_agent -v "$fixture/mid:/etc/flyx-agent")
 [[ "$out" == $'image-binary\n/etc/flyx-agent' ]]
-[[ -x "$fixture/current/flyx-agent" ]]
+[[ -x "$fixture/mid/flyx-agent" ]]
 
 # Old Compose files only mount the legacy directory, including on first use.
 printf '{"secret":"keep"}\n' > "$fixture/legacy/config.json"
@@ -47,8 +52,12 @@ out=$(run_agent -v "$fixture/legacy:/etc/flux_agent")
 [[ "$out" == $'image-binary\n/etc/flux_agent' ]]
 
 printf '{}\n' > "$fixture/current/config.json"
-if run_agent -v "$fixture/current:/etc/flyx-agent" -v "$fixture/legacy:/etc/flux_agent"; then
+if run_agent -v "$fixture/current:/etc/flux-agent" -v "$fixture/legacy:/etc/flux_agent"; then
   echo 'ambiguous data directories were accepted' >&2
+  exit 1
+fi
+if run_agent -v "$fixture/current:/etc/flux-agent" -v "$fixture/mid:/etc/flyx-agent"; then
+  echo 'ambiguous current and flyx data directories were accepted' >&2
   exit 1
 fi
 echo 'Agent container identity, persistent state, restart and image rollback tests passed'

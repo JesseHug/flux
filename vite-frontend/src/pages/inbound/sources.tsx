@@ -25,8 +25,7 @@ import {
 } from "@/shadcn-bridge/heroui/modal";
 import { formatTraffic } from "@/utils/traffic";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 export const INTERVALS: Array<[string, string]> = [
   ["0", "手动"],

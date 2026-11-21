@@ -580,145 +580,160 @@ export function NodeFormModal({
                         <div className="text-xs text-default-500 mb-2">
                           开启开关以屏蔽对应协议
                         </div>
-                    {protocolControlsDisabled && (
+                        {protocolControlsDisabled && (
+                          <Alert
+                            className="mb-2"
+                            color="warning"
+                            description={protocolControlsReason}
+                            variant="flat"
+                          />
+                        )}
+                        <div
+                          className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-content1/30 dark:bg-content1/20 p-3 rounded-md border border-divider ${protocolControlsDisabled ? "opacity-70" : ""}`}
+                        >
+                          {/* HTTP tile */}
+                          <div className="py-3 border-b border-divider">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg
+                                aria-hidden="true"
+                                className="w-4 h-4 text-default-500"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                viewBox="0 0 24 24"
+                              >
+                                <rect
+                                  height="16"
+                                  rx="2"
+                                  width="20"
+                                  x="2"
+                                  y="4"
+                                />
+                                <path d="M2 10h20" />
+                              </svg>
+                              <div className="text-sm font-medium text-default-700">
+                                HTTP
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">
+                                禁用/启用
+                              </div>
+                              <Switch
+                                isDisabled={protocolControlsDisabled}
+                                isSelected={form.http === 1}
+                                size="sm"
+                                onValueChange={(v) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    http: v ? 1 : 0,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">
+                              {form.http === 1 ? "已开启" : "已关闭"}
+                            </div>
+                          </div>
+
+                          {/* TLS tile */}
+                          <div className="py-3 border-b border-divider">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg
+                                aria-hidden="true"
+                                className="w-4 h-4 text-default-500"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M6 10V7a6 6 0 1 1 12 0v3" />
+                                <rect
+                                  height="10"
+                                  rx="2"
+                                  width="16"
+                                  x="4"
+                                  y="10"
+                                />
+                              </svg>
+                              <div className="text-sm font-medium text-default-700">
+                                TLS
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">
+                                禁用/启用
+                              </div>
+                              <Switch
+                                isDisabled={protocolControlsDisabled}
+                                isSelected={form.tls === 1}
+                                size="sm"
+                                onValueChange={(v) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    tls: v ? 1 : 0,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">
+                              {form.tls === 1 ? "已开启" : "已关闭"}
+                            </div>
+                          </div>
+
+                          {/* SOCKS tile */}
+                          <div className="py-3 border-b border-divider">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg
+                                aria-hidden="true"
+                                className="w-4 h-4 text-default-500"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                viewBox="0 0 24 24"
+                              >
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                <polyline points="7 10 12 15 17 10" />
+                                <line x1="12" x2="12" y1="15" y2="3" />
+                              </svg>
+                              <div className="text-sm font-medium text-default-700">
+                                SOCKS
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <div className="text-xs text-default-500">
+                                禁用/启用
+                              </div>
+                              <Switch
+                                isDisabled={protocolControlsDisabled}
+                                isSelected={form.socks === 1}
+                                size="sm"
+                                onValueChange={(v) =>
+                                  setForm((prev) => ({
+                                    ...prev,
+                                    socks: v ? 1 : 0,
+                                  }))
+                                }
+                              />
+                            </div>
+                            <div className="mt-1 text-xs text-default-400">
+                              {form.socks === 1 ? "已开启" : "已关闭"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
                       <Alert
-                        className="mb-2"
-                        color="warning"
-                        description={protocolControlsReason}
+                        color="danger"
+                        description="请不要在出口服务器执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口服务器执行。"
                         variant="flat"
                       />
-                    )}
-                    <div
-                      className={`grid grid-cols-1 sm:grid-cols-3 gap-3 bg-content1/30 dark:bg-content1/20 p-3 rounded-md border border-divider ${protocolControlsDisabled ? "opacity-70" : ""}`}
-                    >
-                      {/* HTTP tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <rect height="16" rx="2" width="20" x="2" y="4" />
-                            <path d="M2 10h20" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            HTTP
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
-                          <Switch
-                            isDisabled={protocolControlsDisabled}
-                            isSelected={form.http === 1}
-                            size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({
-                                ...prev,
-                                http: v ? 1 : 0,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.http === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
-
-                      {/* TLS tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M6 10V7a6 6 0 1 1 12 0v3" />
-                            <rect height="10" rx="2" width="16" x="4" y="10" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            TLS
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
-                          <Switch
-                            isDisabled={protocolControlsDisabled}
-                            isSelected={form.tls === 1}
-                            size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({ ...prev, tls: v ? 1 : 0 }))
-                            }
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.tls === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
-
-                      {/* SOCKS tile */}
-                      <div className="py-3 border-b border-divider">
-                        <div className="flex items-center gap-2 mb-2">
-                          <svg
-                            aria-hidden="true"
-                            className="w-4 h-4 text-default-500"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth="2"
-                            viewBox="0 0 24 24"
-                          >
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" x2="12" y1="15" y2="3" />
-                          </svg>
-                          <div className="text-sm font-medium text-default-700">
-                            SOCKS
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="text-xs text-default-500">
-                            禁用/启用
-                          </div>
-                          <Switch
-                            isDisabled={protocolControlsDisabled}
-                            isSelected={form.socks === 1}
-                            size="sm"
-                            onValueChange={(v) =>
-                              setForm((prev) => ({
-                                ...prev,
-                                socks: v ? 1 : 0,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="mt-1 text-xs text-default-400">
-                          {form.socks === 1 ? "已开启" : "已关闭"}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Alert
-                    color="danger"
-                    description="请不要在出口服务器执行屏蔽协议，否则可能影响转发；屏蔽协议仅需在入口服务器执行。"
-                    variant="flat"
-                  />
                     </>
                   )}
                 </div>

@@ -522,3 +522,18 @@ func (r *Repository) SetNodeNftError(nodeID int64, msg string) (bool, error) {
 		Update("nft_error", msg)
 	return res.RowsAffected > 0, res.Error
 }
+
+// SetNodeStatsCapable records whether a node's agent supports built-in kernel
+// stats polling; returns true when the stored flag changed.
+func (r *Repository) SetNodeStatsCapable(nodeID int64, capable bool) (bool, error) {
+	if r == nil || r.db == nil {
+		return false, errors.New("repository not initialized")
+	}
+	val := 0
+	if capable {
+		val = 1
+	}
+	res := r.db.Model(&model.Node{}).Where("id = ? AND stats_capable <> ?", nodeID, val).
+		Update("stats_capable", val)
+	return res.RowsAffected > 0, res.Error
+}

@@ -50,15 +50,15 @@ get_architecture() {
 }
 
 # 安装目录
-INSTALL_DIR="/etc/flyx-agent"
-AGENT_NAME="flyx-agent"
-AGENT_SYSTEMD_SERVICE_FILE="/etc/systemd/system/flyx-agent.service"
-AGENT_OPENRC_SERVICE_FILE="/etc/init.d/flyx-agent"
+INSTALL_DIR="/etc/flux-agent"
+AGENT_NAME="flux-agent"
+AGENT_SYSTEMD_SERVICE_FILE="/etc/systemd/system/flux-agent.service"
+AGENT_OPENRC_SERVICE_FILE="/etc/init.d/flux-agent"
 
-# flux-panel, FLVX and FLYX before 3.4.0 all install to /etc/flux_agent.
-# Only a FLYX agent of this panel (same addr in config.json) is kept in place,
-# so it upgrades and rolls back from its old path; any other agent there
-# belongs to another panel and is left alone.
+# flux-panel, FLVX and pre-3.4.0 releases all install to /etc/flux_agent;
+# 3.4.0-3.6.0 releases install to /etc/flyx-agent. Existing installations keep
+# their path in place, and /etc/flux_agent is only reused when config.json
+# matches this panel's address.
 legacy_agent_matches_panel() {
   local config="$1/config.json" addr
   [[ -n "$SERVER_ADDR" && -f "$config" ]] || return 1
@@ -72,8 +72,8 @@ confirm_legacy_agent() {
   [[ ! -e "$INSTALL_DIR/config.json" && ! -e "$INSTALL_DIR/$AGENT_NAME" ]] || return 0
   [[ -e "$etc_root/flux_agent/config.json" || -e "$etc_root/flux_agent/flux_agent" ]] || return 0
   echo "⚠️ 未找到 $INSTALL_DIR，但发现 $etc_root/flux_agent。"
-  echo "   它可能是 3.4.0 之前的 FLYX agent，也可能属于 flux-panel / FLVX 等其他面板。"
-  read -p "确认 $etc_root/flux_agent 是本面板的 FLYX agent 吗？(y/N): " confirm
+  echo "   它可能是 3.4.0 之前的 FLUX agent，也可能属于 flux-panel / FLVX 等其他面板。"
+  read -p "确认 $etc_root/flux_agent 是本面板的 FLUX agent 吗？(y/N): " confirm
   [[ "$confirm" == "y" || "$confirm" == "Y" ]] || return 0
   AGENT_NAME="flux_agent"
   INSTALL_DIR="$etc_root/flux_agent"
@@ -83,12 +83,17 @@ confirm_legacy_agent() {
 
 resolve_agent_installation() {
   local etc_root="${AGENT_ETC_ROOT:-/etc}"
-  local current="$etc_root/flyx-agent" legacy="$etc_root/flux_agent"
-  AGENT_NAME="flyx-agent"
+  local current="$etc_root/flux-agent" mid="$etc_root/flyx-agent" legacy="$etc_root/flux_agent"
+  AGENT_NAME="flux-agent"
   INSTALL_DIR="$current"
-  if [[ ! -e "$current/config.json" && ! -e "$current/flyx-agent" ]] && legacy_agent_matches_panel "$legacy"; then
-    AGENT_NAME="flux_agent"
-    INSTALL_DIR="$legacy"
+  if [[ ! -e "$current/config.json" && ! -e "$current/flux-agent" ]]; then
+    if [[ -e "$mid/config.json" || -e "$mid/flyx-agent" || -e "$mid/flyx-agent-lite" ]]; then
+      AGENT_NAME="flyx-agent"
+      INSTALL_DIR="$mid"
+    elif legacy_agent_matches_panel "$legacy"; then
+      AGENT_NAME="flux_agent"
+      INSTALL_DIR="$legacy"
+    fi
   fi
   AGENT_SYSTEMD_SERVICE_FILE="$etc_root/systemd/system/$AGENT_NAME.service"
   AGENT_OPENRC_SERVICE_FILE="$etc_root/init.d/$AGENT_NAME"
@@ -212,12 +217,12 @@ resolve_version() {
     echo "$VERSION"
     return 0
   fi
-  if [[ -n "${FLYX_VERSION:-}" ]]; then
-    echo "$FLYX_VERSION"
-    return 0
-  fi
   if [[ -n "${FLUX_VERSION:-}" ]]; then
     echo "$FLUX_VERSION"
+    return 0
+  fi
+  if [[ -n "${FLYX_VERSION:-}" ]]; then
+    echo "$FLYX_VERSION"
     return 0
   fi
   if [[ -n "${PINNED_VERSION:-}" ]]; then
@@ -449,7 +454,7 @@ write_agent_service() {
       mkdir -p "$(dirname "$AGENT_SYSTEMD_SERVICE_FILE")"
       cat > "$AGENT_SYSTEMD_SERVICE_FILE" <<EOF
 [Unit]
-Description=FLYX Agent Proxy Service
+Description=FLUX Agent Proxy Service
 After=network.target
 
 [Service]
@@ -470,7 +475,7 @@ EOF
 #!/sbin/openrc-run
 
 name="$AGENT_NAME"
-description="FLYX Agent Proxy Service"
+description="FLUX Agent Proxy Service"
 export GODEBUG=disablethp=1
 command="$INSTALL_DIR/$AGENT_NAME"
 directory="$INSTALL_DIR"
@@ -604,7 +609,7 @@ done
 
 # 安装功能
 install_agent() {
-  echo "🚀 开始安装 FLYX agent..."
+  echo "🚀 开始安装 FLUX agent..."
 
   ask_proxy_config
   ensure_download_url_initialized || exit 1
@@ -628,15 +633,15 @@ install_agent() {
 
   # 停止并禁用已有服务
   if agent_service_exists; then
-    echo "🔍 检测到已存在的FLYX agent服务"
+    echo "🔍 检测到已存在的FLUX agent服务"
     stop_agent_service
     echo "🛑 停止服务"
     disable_agent_service
     echo "🚫 禁用自启"
   fi
 
-  # 下载 FLYX agent
-  echo "⬇️ 下载 FLYX agent 中..."
+  # 下载 FLUX agent
+  echo "⬇️ 下载 FLUX agent 中..."
   rm -f "$tmp_binary"
   curl -L "$DOWNLOAD_URL" -o "$tmp_binary"
   if [[ ! -f "$tmp_binary" || ! -s "$tmp_binary" ]]; then
@@ -649,7 +654,7 @@ install_agent() {
   echo "✅ 下载完成"
 
   # 打印版本
-  echo "🔎 FLYX agent 版本：$($INSTALL_DIR/$AGENT_NAME -V)"
+  echo "🔎 FLUX agent 版本：$($INSTALL_DIR/$AGENT_NAME -V)"
 
   # 写入 config.json (安装时总是创建新的)
   CONFIG_FILE="$INSTALL_DIR/config.json"
@@ -679,22 +684,22 @@ EOF
   # 检查状态
   echo "🔄 检查服务状态..."
   if agent_service_is_active; then
-    echo "✅ 安装完成，FLYX agent服务已启动并设置为开机启动。"
+    echo "✅ 安装完成，FLUX agent服务已启动并设置为开机启动。"
     echo "📁 配置目录: $INSTALL_DIR"
     echo "🔧 服务状态: $(agent_service_status)"
   else
-    echo "❌ FLYX agent服务启动失败，请执行以下命令查看状态："
+    echo "❌ FLUX agent服务启动失败，请执行以下命令查看状态："
     agent_service_status_hint
   fi
 }
 
 # 更新功能
 update_agent() {
-  echo "🔄 开始更新 FLYX agent..."
+  echo "🔄 开始更新 FLUX agent..."
   confirm_legacy_agent
   
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    echo "❌ FLYX agent 未安装，请先选择安装。"
+    echo "❌ FLUX agent 未安装，请先选择安装。"
     return 1
   fi
 
@@ -724,7 +729,7 @@ update_agent() {
 
   # 停止服务
   if agent_service_exists; then
-    echo "🛑 停止 FLYX agent 服务..."
+    echo "🛑 停止 FLUX agent 服务..."
     stop_agent_service
   fi
 
@@ -744,15 +749,15 @@ update_agent() {
 
 # 卸载功能
 uninstall_agent() {
-  echo "🗑️ 开始卸载 FLYX agent..."
+  echo "🗑️ 开始卸载 FLUX agent..."
   ensure_service_manager || return 1
   confirm_legacy_agent
   if [[ ! -d "$INSTALL_DIR" ]]; then
-    echo "❌ FLYX agent 未安装。"
+    echo "❌ FLUX agent 未安装。"
     return 1
   fi
 
-  read -p "确认卸载 FLYX agent 吗？此操作将删除所有相关文件 (y/N): " confirm
+  read -p "确认卸载 FLUX agent 吗？此操作将删除所有相关文件 (y/N): " confirm
   if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
     echo "❌ 取消卸载"
     return 0

@@ -38,7 +38,7 @@ func (f *fakeGist) serve(t *testing.T) *httptest.Server {
 			}
 			files := map[string]interface{}{}
 			if rev > 0 {
-				files["flyx-backup.json"] = map[string]interface{}{"content": f.revisions[rev-1], "truncated": false}
+				files["flux-backup.json"] = map[string]interface{}{"content": f.revisions[rev-1], "truncated": false}
 			}
 			return map[string]interface{}{"id": "g1", "html_url": "https://gist.github.com/g1", "files": files, "history": history}
 		}
@@ -57,12 +57,12 @@ func (f *fakeGist) serve(t *testing.T) *httptest.Server {
 				t.Error("the backup gist must be private")
 			}
 			f.created++
-			f.revisions = append(f.revisions, body.Files["flyx-backup.json"].Content)
+			f.revisions = append(f.revisions, body.Files["flux-backup.json"].Content)
 			_ = json.NewEncoder(w).Encode(doc(len(f.revisions)))
 		case r.Method == http.MethodPatch && r.URL.Path == "/gists/g1":
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			f.patched++
-			f.revisions = append(f.revisions, body.Files["flyx-backup.json"].Content)
+			f.revisions = append(f.revisions, body.Files["flux-backup.json"].Content)
 			_ = json.NewEncoder(w).Encode(doc(len(f.revisions)))
 		case r.Method == http.MethodGet && r.URL.Path == "/gists/g1":
 			_ = json.NewEncoder(w).Encode(doc(len(f.revisions)))

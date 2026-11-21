@@ -16,14 +16,14 @@ function isSkillPackage(source) {
   if (!source) return false;
   try {
     const { name } = JSON.parse(fs.readFileSync(path.join(source, "package.json")));
-    return name === "@flyx/skill-api" || name === "@flvx/skill-api";
+    return name === "@flux/skill-api" || name === "@flyx/skill-api" || name === "@flvx/skill-api";
   } catch {
     return false;
   }
 }
 
 function install(action, directory, source = __dirname) {
-  const target = path.join(directory, "flyx-api");
+  const target = path.join(directory, "flux-api");
   const current = linkTarget(target);
   if (action === "unlink") {
     if (current === source) fs.unlinkSync(target);
@@ -38,9 +38,11 @@ function install(action, directory, source = __dirname) {
     if (current !== undefined) fs.unlinkSync(target);
     fs.symlinkSync(source, target, "dir");
   }
-  const legacy = path.join(directory, "flvx-api");
-  const previous = linkTarget(legacy);
-  if (previous === source || isSkillPackage(previous)) fs.unlinkSync(legacy);
+  for (const legacyName of ["flyx-api", "flvx-api"]) {
+    const legacy = path.join(directory, legacyName);
+    const previous = linkTarget(legacy);
+    if (previous === source || isSkillPackage(previous)) fs.unlinkSync(legacy);
+  }
 }
 
 if (require.main === module) {

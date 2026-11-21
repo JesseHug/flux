@@ -1,5 +1,5 @@
 """
-Test authentication flow for FLYX.
+Test authentication flow for FLUX.
 Tests login, logout, session management, and protected routes.
 """
 

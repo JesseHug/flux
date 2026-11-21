@@ -17,13 +17,14 @@ import (
 )
 
 type instance struct {
-	req     ApplyRequest
-	binDir  string            // main binary directory
-	bins    map[string]string // "" = main binary, else extra name -> path
-	version string
-	logs    *logRing
-	procs   []*process
-	err     string
+	req       ApplyRequest
+	binDir    string            // main binary directory
+	bins      map[string]string // "" = main binary, else extra name -> path
+	version   string
+	statsAddr string
+	logs      *logRing
+	procs     []*process
+	err       string
 }
 
 // Manager owns every kernel instance on this agent. Apply/Control are
@@ -40,6 +41,13 @@ type Manager struct {
 	nft         *nftCounters
 	// lastNftErr is the last nftables sync failure logged (guarded by mu).
 	lastNftErr string
+
+	statsQuerier  StatsQuerier
+	statsEpoch    string
+	statsTotals   map[userCounterKey]int64
+	statsStarted  bool
+	statsStop     chan struct{}
+	statsStopOnce sync.Once
 }
 
 // SetLiteMode switches the manager between normal and NAT/low-memory lite mode:
@@ -63,11 +71,11 @@ var (
 	defaultManagerOnce sync.Once
 )
 
-// Default uses FLYX_KERNEL_DIR (legacy FLVX_KERNEL_DIR is accepted), or
+// Default uses FLUX_KERNEL_DIR (legacy FLYX_KERNEL_DIR / FLVX_KERNEL_DIR are accepted), or
 // the kernels directory alongside the running agent.
 func Default() *Manager {
 	defaultManagerOnce.Do(func() {
-		dir := strings.TrimSpace(identity.Env("FLYX_KERNEL_DIR", "FLVX_KERNEL_DIR"))
+		dir := strings.TrimSpace(identity.Env("FLUX_KERNEL_DIR", "FLYX_KERNEL_DIR", "FLVX_KERNEL_DIR"))
 		if dir == "" {
 			dir = filepath.Join(identity.DataDir(), "kernels")
 		}
@@ -78,9 +86,12 @@ func Default() *Manager {
 
 func NewManager(baseDir string) *Manager {
 	return &Manager{
-		baseDir:   baseDir,
-		instances: make(map[string]*instance),
-		nft:       newNftCounters(baseDir),
+		baseDir:     baseDir,
+		instances:   make(map[string]*instance),
+		nft:         newNftCounters(baseDir),
+		statsEpoch:  newEpoch(),
+		statsTotals: make(map[userCounterKey]int64),
+		statsStop:   make(chan struct{}),
 	}
 }
 
@@ -99,6 +110,7 @@ func (m *Manager) Restore() {
 		m.restore()
 		if !m.IsLiteMode() {
 			m.startGeoUpdater()
+			m.startStatsCollector()
 		}
 	})
 }
@@ -197,7 +209,7 @@ func (m *Manager) syncNft() error {
 	var guarded []*instance
 	for _, inst := range m.instances {
 		if logIt {
-			inst.logs.add("[flyx] nftables 规则同步失败: " + err.Error())
+			inst.logs.add("[flux] nftables 规则同步失败: " + err.Error())
 		}
 		if !inst.req.Enabled {
 			continue
@@ -231,12 +243,12 @@ func (m *Manager) ensureBinary(inst *instance, label string, d *Download, dir st
 		if bad == nil {
 			return path, nil
 		}
-		inst.logs.add(fmt.Sprintf("[flyx] 已安装的 %s 无法在本机运行（%v），重新安装", label, bad))
+		inst.logs.add(fmt.Sprintf("[flux] 已安装的 %s 无法在本机运行（%v），重新安装", label, bad))
 		if err := os.RemoveAll(dir); err != nil {
 			return "", fmt.Errorf("删除无法运行的 %s 失败: %v", label, err)
 		}
 	}
-	inst.logs.add(fmt.Sprintf("[flyx] 安装 %s", label))
+	inst.logs.add(fmt.Sprintf("[flux] 安装 %s", label))
 	if err := install(d, dir); err != nil {
 		return "", fmt.Errorf("安装 %s 失败: %v", label, err)
 	}
@@ -244,7 +256,7 @@ func (m *Manager) ensureBinary(inst *instance, label string, d *Download, dir st
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("安装的 %s 无法在本机运行: %v", label, bad)
 	}
-	inst.logs.add(fmt.Sprintf("[flyx] %s 安装完成", label))
+	inst.logs.add(fmt.Sprintf("[flux] %s 安装完成", label))
 	return path, nil
 }
 
@@ -289,8 +301,30 @@ func (m *Manager) Apply(req ApplyRequest) (State, error) {
 		return m.state(req.Type, false), err
 	}
 	prevFiles := readFiles(runDir, req.Files)
+
+	m.mu.Lock()
+	changed := inst.req.Hash != req.Hash || inst.bins[""] != mainBin || len(inst.bins) != len(bins)
+	running := len(inst.procs) > 0
+	for _, p := range inst.procs {
+		if r, _, _, _, _ := p.snapshot(); !r {
+			running = false
+		}
+	}
+	prev := prevApply{req: inst.req, binDir: inst.binDir, bins: inst.bins, version: inst.version, statsAddr: inst.statsAddr, files: prevFiles}
+	statsAddr := inst.statsAddr
+	m.mu.Unlock()
+
+	if !req.Enabled || changed || !running {
+		m.stopProcesses(inst)
+	}
+	filesToWrite := req.Files
+	if !req.Enabled {
+		statsAddr = ""
+	} else if changed || !running || statsAddr == "" {
+		statsAddr, filesToWrite = resolveStatsAddr(req, filesToWrite)
+	}
 	fix := adapters[req.Type].fixFile
-	for _, f := range req.Files {
+	for _, f := range filesToWrite {
 		content := f.Content
 		if fix != nil {
 			content = fix(f.Name, content)
@@ -302,17 +336,10 @@ func (m *Manager) Apply(req ApplyRequest) (State, error) {
 	}
 
 	m.mu.Lock()
-	changed := inst.req.Hash != req.Hash || inst.bins[""] != mainBin || len(inst.bins) != len(bins)
-	running := len(inst.procs) > 0
-	for _, p := range inst.procs {
-		if r, _, _, _, _ := p.snapshot(); !r {
-			running = false
-		}
-	}
-	prev := prevApply{req: inst.req, binDir: inst.binDir, bins: inst.bins, version: inst.version, files: prevFiles}
 	inst.req = req
 	inst.binDir = binDir
 	inst.bins = bins
+	inst.statsAddr = statsAddr
 	inst.err = ""
 	needVersion := inst.version == "" || changed
 	m.mu.Unlock()
@@ -323,9 +350,6 @@ func (m *Manager) Apply(req ApplyRequest) (State, error) {
 		m.mu.Unlock()
 	}
 
-	if !req.Enabled || changed || !running {
-		m.stopProcesses(inst)
-	}
 	if err := m.syncNft(); err != nil {
 		m.persist()
 		return m.state(req.Type, false), err
@@ -334,6 +358,7 @@ func (m *Manager) Apply(req ApplyRequest) (State, error) {
 		m.startProcesses(inst)
 		time.Sleep(startupProbeIn)
 	}
+	m.startStatsCollector()
 
 	var failure error
 	if req.Enabled && !m.state(req.Type, false).Running {
@@ -359,11 +384,12 @@ func (m *Manager) Apply(req ApplyRequest) (State, error) {
 // prevApply is what an instance ran before an apply, to go back to when the
 // new config does not start.
 type prevApply struct {
-	req     ApplyRequest
-	binDir  string
-	bins    map[string]string
-	version string
-	files   map[string][]byte
+	req       ApplyRequest
+	binDir    string
+	bins      map[string]string
+	version   string
+	statsAddr string
+	files     map[string][]byte
 }
 
 func (m *Manager) rollback(inst *instance, runDir string, prev prevApply) error {
@@ -381,6 +407,7 @@ func (m *Manager) rollback(inst *instance, runDir string, prev prevApply) error 
 	inst.binDir = prev.binDir
 	inst.bins = prev.bins
 	inst.version = prev.version
+	inst.statsAddr = prev.statsAddr
 	m.mu.Unlock()
 	if err := m.syncNft(); err != nil {
 		return err
@@ -425,7 +452,7 @@ func (m *Manager) setErr(inst *instance, err error) {
 	m.mu.Lock()
 	inst.err = err.Error()
 	m.mu.Unlock()
-	inst.logs.add("[flyx] " + err.Error())
+	inst.logs.add("[flux] " + err.Error())
 }
 
 // startProcesses launches every process of the instance's current request.
@@ -458,6 +485,7 @@ func (m *Manager) startProcesses(inst *instance) {
 }
 
 func (m *Manager) stopProcesses(inst *instance) {
+	m.drainInstanceStats(inst)
 	m.mu.Lock()
 	procs := inst.procs
 	inst.procs = nil
@@ -512,6 +540,9 @@ func (m *Manager) Control(kernelType, action string) (State, error) {
 		m.stopProcesses(inst)
 		m.mu.Lock()
 		inst.req.Enabled = true
+		if inst.statsAddr == "" && inst.req.StatsAddr != "" {
+			inst.statsAddr = inst.req.StatsAddr
+		}
 		inst.err = ""
 		m.mu.Unlock()
 		if err := m.syncNft(); err != nil {
@@ -564,6 +595,9 @@ func (m *Manager) state(kernelType string, withLogs bool) State {
 // Status reports every kernel plus the nft traffic counters. logsFor selects
 // one kernel whose recent output is included.
 func (m *Manager) Status(logsFor string) Status {
+	if !m.IsLiteMode() && m.hasStatsQuerier() {
+		m.drainAllStats()
+	}
 	m.mu.Lock()
 	types := make([]string, 0, len(m.instances))
 	for t := range m.instances {
@@ -575,6 +609,10 @@ func (m *Manager) Status(logsFor string) Status {
 	out := Status{Kernels: make([]State, 0, len(types))}
 	for _, t := range types {
 		out.Kernels = append(out.Kernels, m.state(t, t == logsFor))
+	}
+	if !m.IsLiteMode() && m.hasStatsQuerier() {
+		out.StatsCapable = true
+		out.StatsEpoch, out.StatsUsers = m.snapshotStatsUsers()
 	}
 	if m.IsLiteMode() {
 		if err := nftAvailable(); err != nil {
@@ -591,7 +629,7 @@ func (m *Manager) Status(logsFor string) Status {
 		}
 		return out
 	}
-	if len(m.allPorts()) == 0 {
+	if len(m.allPorts()) == 0 && !m.nft.hasOffsets() {
 		if err := nftAvailable(); err != nil {
 			out.NftError = nftUnavailableText(err)
 		} else {
@@ -621,6 +659,9 @@ func (m *Manager) Uninstall() error {
 }
 
 func (m *Manager) Shutdown() {
+	m.statsStopOnce.Do(func() {
+		close(m.statsStop)
+	})
 	m.mu.Lock()
 	insts := make([]*instance, 0, len(m.instances))
 	for _, inst := range m.instances {

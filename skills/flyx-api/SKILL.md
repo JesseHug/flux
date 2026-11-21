@@ -1,26 +1,26 @@
 ---
-name: flyx-api
-description: Operate FLYX traffic forwarding management system via REST API. Supports user/node/tunnel/forward management, federation clustering, and traffic monitoring. Use when user wants to manage FLYX panel programmatically or via natural language.
+name: flux-api
+description: Operate FLUX traffic forwarding management system via REST API. Supports user/node/tunnel/forward management, federation clustering, and traffic monitoring. Use when user wants to manage FLUX panel programmatically or via natural language.
 metadata:
-  author: FLVX Team
+  author: FLUX Team
   version: "2.1.5"
   requires_env:
-    - FLYX_BASE_URL
-    - FLYX_USERNAME
-    - FLYX_PASSWORD
+    - FLUX_BASE_URL
+    - FLUX_USERNAME
+    - FLUX_PASSWORD
 ---
 
-# FLYX API Operations
+# FLUX API Operations
 
-For existing installations, read `FLYX_BASE_URL`, `FLYX_USERNAME` and `FLYX_PASSWORD` first; when a variable is unset, accept its corresponding `FLVX_` legacy alias. An explicitly supplied new value takes precedence.
+For existing installations, read `FLUX_BASE_URL`, `FLUX_USERNAME` and `FLUX_PASSWORD` first; when a variable is unset, accept its corresponding `FLYX_` or `FLVX_` legacy alias. An explicitly supplied new value takes precedence.
 
-Operate FLYX panel through REST API. All endpoints use POST method and return JSON with `{code, msg, data, ts}` envelope.
+Operate FLUX panel through REST API. All endpoints use POST method and return JSON with `{code, msg, data, ts}` envelope.
 
 ## Supported AI Tools
 
 | Tool | Installation | Notes |
 |------|--------------|-------|
-| **OpenCode** | `npm i -g @flyx/skill-api` or `ln -s . ~/.agents/skills/flyx-api` | Auto-loads from `~/.agents/skills/` |
+| **OpenCode** | `npm i -g @flux/skill-api` or `ln -s . ~/.agents/skills/flux-api` | Auto-loads from `~/.agents/skills/` |
 | **OpenClaw** | Same as OpenCode | Compatible skill format |
 | **Claude Code** | Copy SKILL.md to CLAUDE.md or `~/.claude/CLAUDE.md` | Uses context file instead of skills |
 
@@ -29,20 +29,20 @@ Operate FLYX panel through REST API. All endpoints use POST method and return JS
 Set environment variables before starting:
 
 ```bash
-export FLYX_BASE_URL="https://your-panel.example.com"
-export FLYX_USERNAME="admin"
-export FLYX_PASSWORD="your-password"
+export FLUX_BASE_URL="https://your-panel.example.com"
+export FLUX_USERNAME="admin"
+export FLUX_PASSWORD="your-password"
 ```
 
-**Security tip:** Add to `~/.flyx/.env` and source on demand:
+**Security tip:** Add to `~/.flux/.env` and source on demand:
 ```bash
-mkdir -p ~/.flyx && cat > ~/.flyx/.env << 'EOF'
-export FLYX_BASE_URL="https://panel.example.com"
-export FLYX_USERNAME="admin"
-export FLYX_PASSWORD="your-password"
+mkdir -p ~/.flux && cat > ~/.flux/.env << 'EOF'
+export FLUX_BASE_URL="https://panel.example.com"
+export FLUX_USERNAME="admin"
+export FLUX_PASSWORD="your-password"
 EOF
-chmod 600 ~/.flyx/.env
-source ~/.flyx/.env
+chmod 600 ~/.flux/.env
+source ~/.flux/.env
 ```
 
 ## Authentication Flow
@@ -60,7 +60,7 @@ Before ANY API call:
 1. Check if TOKEN is cached in current session
    ├─ Yes → Use cached token, proceed
    └─ No → 
-       1. Read FLYX_USERNAME and FLYX_PASSWORD from environment
+       1. Read FLUX_USERNAME and FLUX_PASSWORD from environment
        2. POST /api/v1/user/login with credentials
        3. Cache response.data.token in session memory
        4. Proceed with original request
@@ -69,9 +69,9 @@ Before ANY API call:
 ### Login Request
 
 ```bash
-curl -X POST "${FLYX_BASE_URL}/api/v1/user/login" \
+curl -X POST "${FLUX_BASE_URL}/api/v1/user/login" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"${FLYX_USERNAME}\",\"password\":\"${FLYX_PASSWORD}\"}"
+  -d "{\"username\":\"${FLUX_USERNAME}\",\"password\":\"${FLUX_PASSWORD}\"}"
 ```
 
 **Response:**
@@ -134,9 +134,9 @@ User request → Check env vars → Auto-login if needed → Call API → Return
 
 ```bash
 #!/bin/bash
-BASE_URL="${FLYX_BASE_URL}"
-USERNAME="${FLYX_USERNAME}"
-PASSWORD="${FLYX_PASSWORD}"
+BASE_URL="${FLUX_BASE_URL}"
+USERNAME="${FLUX_USERNAME}"
+PASSWORD="${FLUX_PASSWORD}"
 
 # Login and get token
 TOKEN=$(curl -s -X POST "${BASE_URL}/api/v1/user/login" \
@@ -161,9 +161,9 @@ curl -s -X POST "${BASE_URL}/api/v1/node/list" \
 import os
 import requests
 
-BASE_URL = os.environ.get("FLYX_BASE_URL")
-USERNAME = os.environ.get("FLYX_USERNAME")
-PASSWORD = os.environ.get("FLYX_PASSWORD")
+BASE_URL = os.environ.get("FLUX_BASE_URL")
+USERNAME = os.environ.get("FLUX_USERNAME")
+PASSWORD = os.environ.get("FLUX_PASSWORD")
 
 # Login
 resp = requests.post(f"{BASE_URL}/api/v1/user/login", 
@@ -187,9 +187,9 @@ print(resp.json())
 ### Node.js (fetch)
 
 ```javascript
-const BASE_URL = process.env.FLYX_BASE_URL;
-const USERNAME = process.env.FLYX_USERNAME;
-const PASSWORD = process.env.FLYX_PASSWORD;
+const BASE_URL = process.env.FLUX_BASE_URL;
+const USERNAME = process.env.FLUX_USERNAME;
+const PASSWORD = process.env.FLUX_PASSWORD;
 
 // Login
 const loginRes = await fetch(`${BASE_URL}/api/v1/user/login`, {

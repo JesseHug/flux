@@ -47,7 +47,7 @@ func runUninstall() {
 	dir := identity.DataDir()
 	binaryPath := identity.BinaryPath()
 
-	if identity.Env("FLYX_AGENT_CONTAINER", "FLUX_AGENT_CONTAINER") == "1" {
+	if identity.Env("FLUX_AGENT_CONTAINER", "FLYX_AGENT_CONTAINER") == "1" {
 		_ = os.WriteFile(filepath.Join(dir, uninstallMarker), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600)
 		entries, _ := os.ReadDir(dir)
 		binName := filepath.Base(binaryPath)

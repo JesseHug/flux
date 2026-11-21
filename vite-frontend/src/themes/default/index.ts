@@ -1,13 +1,13 @@
 /**
  * Default Theme
  * =============
- * This is the built-in "stock" FLYX theme.  It doesn't override any
+ * This is the built-in "stock" FLUX theme.  It doesn't override any
  * components — it only declares the CSS tokens that match the colours
  * already defined in `globals.css`.  This serves as the **reference
  * implementation** that theme authors can copy and modify.
  *
  * When this theme is active, the frontend looks identical to an
- * unmodified FLYX install.
+ * unmodified FLUX install.
  */
 
 import type { ThemePackage } from "../types";

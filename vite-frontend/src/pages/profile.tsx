@@ -125,7 +125,7 @@ interface LoginCache {
   github: GithubInfo | null;
 }
 
-const loginCacheKey = () => `flyx_login_rows_${getSessionName() || ""}`;
+const loginCacheKey = () => `flux_login_rows_${getSessionName() || ""}`;
 
 function readLoginCache(): LoginCache {
   try {

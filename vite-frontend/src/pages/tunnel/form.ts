@@ -191,7 +191,8 @@ export const validateTunnelForm = (
     if (form.forwardMode === "nftables") {
       errors.type = "nftables 服务器仅支持端口转发";
     } else if (form.forwardMode === "lite") {
-      errors.type = "lite 服务器不支持隧道转发，请改用 realm 端口转发或节点内核";
+      errors.type =
+        "lite 服务器不支持隧道转发，请改用 realm 端口转发或节点内核";
     }
 
     if (!form.outNodeId || form.outNodeId.length === 0) {
@@ -236,13 +237,14 @@ export const validateTunnelForm = (
     }
   }
 
-  const hasLiteNode = [...(form.inNodeId || []), ...(form.outNodeId || [])].some(
-    (item) => {
-      const node = nodes.find((n) => n.id === item.nodeId);
+  const hasLiteNode = [
+    ...(form.inNodeId || []),
+    ...(form.outNodeId || []),
+  ].some((item) => {
+    const node = nodes.find((n) => n.id === item.nodeId);
 
-      return node?.forwardMode === "lite";
-    },
-  );
+    return node?.forwardMode === "lite";
+  });
 
   if (hasLiteNode && form.type === 2 && !errors.type) {
     errors.type = "lite 服务器不支持隧道转发，请改用 realm 端口转发或节点内核";

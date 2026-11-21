@@ -87,6 +87,7 @@ const cyberpunkTheme: ThemePackage = {
   // ── Raw CSS (glow effects, animations, fonts) ─────────────────────────────
   css: `
     /* Cyberpunk neon glow on primary buttons */
+    [data-flux-theme="cyberpunk"] .bg-primary,
     [data-flyx-theme="cyberpunk"] .bg-primary,
     .bg-primary {
       box-shadow: 0 0 12px rgba(255, 0, 255, 0.4),
@@ -94,12 +95,13 @@ const cyberpunkTheme: ThemePackage = {
     }
 
     /* Neon border glow on cards */
+    [data-flux-theme="cyberpunk"] [class*="border"],
     [data-flyx-theme="cyberpunk"] [class*="border"] {
       border-color: rgba(255, 0, 255, 0.15);
     }
 
     /* Scanline overlay animation */
-    @keyframes flyx-scanline {
+    @keyframes flux-scanline {
       0% { transform: translateY(-100%); }
       100% { transform: translateY(100vh); }
     }
@@ -124,10 +126,10 @@ const cyberpunkTheme: ThemePackage = {
     document.documentElement.classList.add("dark");
     document.documentElement.style.colorScheme = "dark";
     // Mark the body for theme-specific CSS selectors
-    document.body.setAttribute("data-flyx-theme", "cyberpunk");
+    document.body.setAttribute("data-flux-theme", "cyberpunk");
   },
   onDeactivate: () => {
-    document.body.removeAttribute("data-flyx-theme");
+    document.body.removeAttribute("data-flux-theme");
   },
 };
 

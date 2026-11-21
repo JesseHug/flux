@@ -300,10 +300,19 @@ func (r *Repository) UpdateSubscriptionApplied(id int64, active int) error {
 }
 
 // SubscriptionCounterSample is one cumulative per-user counter of a node.
+// Source is "" (default, nftables) or "stats" (kernel StatsService).
 type SubscriptionCounterSample struct {
 	SubscriptionID int64
 	Direction      string // "up" or "down"
+	Source         string
 	Bytes          int64
+}
+
+func subscriptionCounterKeyDir(dir, source string) string {
+	if source == "stats" {
+		return dir + ":s"
+	}
+	return dir
 }
 
 // ApplySubscriptionCounterSamples adds what each counter grew by since the
@@ -335,8 +344,9 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 			if s.Bytes < 0 || (s.Direction != "up" && s.Direction != "down") {
 				continue
 			}
+			counterDir := subscriptionCounterKeyDir(s.Direction, s.Source)
 			delta := s.Bytes
-			old, seen := prev[key{s.SubscriptionID, s.Direction}]
+			old, seen := prev[key{s.SubscriptionID, counterDir}]
 			if seen && old.Epoch == epoch {
 				if s.Bytes < old.Bytes {
 					continue
@@ -350,9 +360,9 @@ func (r *Repository) ApplySubscriptionCounterSamples(nodeID int64, epoch string,
 					down[s.SubscriptionID] += delta
 				}
 			}
-			row := model.SubscriptionCounter{NodeID: nodeID, SubscriptionID: s.SubscriptionID, Direction: s.Direction,
+			row := model.SubscriptionCounter{NodeID: nodeID, SubscriptionID: s.SubscriptionID, Direction: counterDir,
 				Epoch: epoch, Bytes: s.Bytes, UpdatedTime: now}
-			prev[key{s.SubscriptionID, s.Direction}] = row
+			prev[key{s.SubscriptionID, counterDir}] = row
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "node_id"}, {Name: "subscription_id"}, {Name: "direction"}},
 				DoUpdates: clause.AssignmentColumns([]string{"epoch", "bytes", "updated_time"}),

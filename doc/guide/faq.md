@@ -33,8 +33,8 @@
 ### 服务器显示离线？
 1. 检查服务器与面板服务器之间的网络连通性。
 2. 确认在服务器端安装时输入的 **面板地址** 和 **密钥** 是否正确。
-3. 检查服务器端服务状态：`systemctl status flyx-agent`（Alpine 用 `rc-service flyx-agent status`；3.4.0 之前安装的节点是 `flux_agent`）。
-4. 查看服务器端日志：`journalctl -u flyx-agent -f`。
+3. 检查服务器端服务状态：`systemctl status flux-agent`（Alpine 用 `rc-service flux-agent status`；3.4–3.6 安装的节点为 `flyx-agent`，3.4 之前为 `flux_agent`）。
+4. 查看服务器端日志：`journalctl -u flux-agent -f`。
 
 ### 部署或升级服务器提示 “API rate limit exceeded”？
 

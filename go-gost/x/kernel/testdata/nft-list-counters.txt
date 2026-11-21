@@ -1,4 +1,4 @@
-table inet flyx_kernel {
+table inet flux_kernel {
 	counter in_1_tcp {
 		packets 0 bytes 0
 	}

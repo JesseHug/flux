@@ -16,9 +16,9 @@ PINNED_VERSION=""
 # 镜像加速配置（可由面板传入或交互式询问）
 PROXY_ENABLED="${PROXY_ENABLED:-}"
 PROXY_URL="${PROXY_URL:-}"
-DEFAULT_PANEL_BACKEND_CONTAINER="flyx-panel-backend"
-DEFAULT_PANEL_POSTGRES_CONTAINER="flyx-panel-postgres"
-DEFAULT_PANEL_DEPLOY_DIR="/opt/flyx-panel"
+DEFAULT_PANEL_BACKEND_CONTAINER="flux-panel-backend"
+DEFAULT_PANEL_POSTGRES_CONTAINER="flux-panel-postgres"
+DEFAULT_PANEL_DEPLOY_DIR="/opt/flux-panel"
 PANEL_SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 # 镜像加速
@@ -102,12 +102,12 @@ resolve_version() {
     echo "$VERSION"
     return 0
   fi
-  if [[ -n "${FLYX_VERSION:-}" ]]; then
-    echo "$FLYX_VERSION"
-    return 0
-  fi
   if [[ -n "${FLUX_VERSION:-}" ]]; then
     echo "$FLUX_VERSION"
+    return 0
+  fi
+  if [[ -n "${FLYX_VERSION:-}" ]]; then
+    echo "$FLYX_VERSION"
     return 0
   fi
   if [[ -n "${PINNED_VERSION:-}" ]]; then
@@ -338,56 +338,59 @@ get_container_compose_label() {
 
 # Images of this project live under ghcr.io/<owner>/; flux-panel and FLVX
 # publish theirs elsewhere.
-flyx_image_prefix() {
+flux_image_prefix() {
   local owner="${REPO%%/*}"
   printf 'ghcr.io/%s/' "$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')"
 }
 
-# flux-panel, FLVX and FLYX before 3.4.0 all name the backend
+# flux-panel, FLVX and pre-3.4.0 releases all name the backend
 # flux-panel-backend; only a container running our image is this panel.
-is_flyx_container() {
+is_flux_container() {
   local image
   image=$(docker inspect -f '{{.Config.Image}}' "$1" 2>/dev/null || true)
-  [[ "$image" == "$(flyx_image_prefix)"* ]]
+  [[ "$image" == "$(flux_image_prefix)"* ]]
 }
 
 # The same check for a deployment directory: its compose file must pull our
 # images, so another panel's .env and docker-compose.yml are never touched.
-is_flyx_deploy_dir() {
-  [[ -f "$1/.env" && -f "$1/docker-compose.yml" ]] && grep -Fq "$(flyx_image_prefix)" "$1/docker-compose.yml"
+is_flux_deploy_dir() {
+  [[ -f "$1/.env" && -f "$1/docker-compose.yml" ]] && grep -Fq "$(flux_image_prefix)" "$1/docker-compose.yml"
 }
 
 detect_panel_backend() {
-  local configured="${PANEL_BACKEND_CONTAINER:-}" current="" legacy=""
+  local configured="${PANEL_BACKEND_CONTAINER:-}" current="" mid="" legacy=""
   if [[ -z "$configured" ]]; then
     configured=$(get_env_var PANEL_BACKEND_CONTAINER "${PANEL_DEPLOY_DIR:-.}/.env" || true)
   fi
   if [[ -n "$configured" ]]; then printf '%s' "$configured"; return; fi
-  current=$(docker inspect -f '{{.Name}}' flyx-panel-backend 2>/dev/null || true)
-  legacy=$(docker inspect -f '{{.Name}}' flux-panel-backend 2>/dev/null || true)
-  if [[ -n "$legacy" ]] && ! is_flyx_container flux-panel-backend; then
-    legacy=""
+  current=$(docker inspect -f '{{.Name}}' flux-panel-backend 2>/dev/null || true)
+  if [[ -n "$current" ]] && ! is_flux_container flux-panel-backend; then
+    current=""
   fi
-  if [[ -n "$current" && -n "$legacy" ]]; then
+  mid=$(docker inspect -f '{{.Name}}' flyx-panel-backend 2>/dev/null || true)
+  if [[ -n "$current" && -n "$mid" ]]; then
     echo "❌ 同时发现新旧面板，请通过 PANEL_BACKEND_CONTAINER 指定要管理的实例。" >&2
     return 1
   fi
-  if [[ -n "$legacy" ]]; then printf '%s' flux-panel-backend; else printf '%s' "$DEFAULT_PANEL_BACKEND_CONTAINER"; fi
+  if [[ -n "$mid" ]]; then printf '%s' flyx-panel-backend; else printf '%s' "$DEFAULT_PANEL_BACKEND_CONTAINER"; fi
 }
 
 write_new_panel_identity() {
-  local backend=flyx-panel-backend frontend=flyx-panel-frontend postgres=flyx-panel-postgres
-  local sqlite_volume=flyx-sqlite-data postgres_volume=flyx-postgres-data network=flyx-network
+  local backend=flux-panel-backend frontend=flux-panel-frontend postgres=flux-panel-postgres
+  local sqlite_volume=flux-sqlite-data postgres_volume=flux-postgres-data network=flux-network
   # Installing an older release must use names its Compose file understands.
-  if [[ -f docker-compose.yml ]] && ! grep -Fq 'FLYX_SQLITE_VOLUME' docker-compose.yml; then
+  if [[ -f docker-compose.yml ]] && ! grep -Fq 'FLUX_SQLITE_VOLUME' docker-compose.yml && ! grep -Fq 'FLYX_SQLITE_VOLUME' docker-compose.yml; then
     backend=flux-panel-backend frontend=vite-frontend postgres=flux-panel-postgres
     sqlite_volume=sqlite_data postgres_volume=postgres_data network=gost-network
   fi
   upsert_env_var .env PANEL_BACKEND_CONTAINER "$backend"
   upsert_env_var .env PANEL_FRONTEND_CONTAINER "$frontend"
   upsert_env_var .env PANEL_POSTGRES_CONTAINER "$postgres"
+  upsert_env_var .env FLUX_SQLITE_VOLUME "$sqlite_volume"
   upsert_env_var .env FLYX_SQLITE_VOLUME "$sqlite_volume"
+  upsert_env_var .env FLUX_POSTGRES_VOLUME "$postgres_volume"
   upsert_env_var .env FLYX_POSTGRES_VOLUME "$postgres_volume"
+  upsert_env_var .env FLUX_NETWORK "$network"
   upsert_env_var .env FLYX_NETWORK "$network"
   PANEL_BACKEND_CONTAINER="$backend"
   PANEL_POSTGRES_CONTAINER="$postgres"
@@ -405,7 +408,7 @@ resolve_panel_deployment() {
   # Older in-panel upgrades ran Compose inside a helper container, which left
   # the label pointing at the container path (/opt/flvx-panel) instead of the
   # real deployment. Prefer the current directory when only it has the files.
-  if [[ -n "$label_dir" && ! -f "$label_dir/docker-compose.yml" ]] && is_flyx_deploy_dir .; then
+  if [[ -n "$label_dir" && ! -f "$label_dir/docker-compose.yml" ]] && is_flux_deploy_dir .; then
     echo "⚠️ 容器标签记录的部署目录 $label_dir 中没有 docker-compose.yml，改用当前目录 $(pwd -P)"
     label_dir=""
   fi
@@ -414,12 +417,14 @@ resolve_panel_deployment() {
     deploy_dir="$requested_dir"
   elif [[ -n "$label_dir" ]]; then
     deploy_dir="$label_dir"
-  elif is_flyx_deploy_dir .; then
+  elif is_flux_deploy_dir .; then
     deploy_dir=$(pwd -P)
-  elif is_flyx_deploy_dir "$DEFAULT_PANEL_DEPLOY_DIR"; then
+  elif is_flux_deploy_dir "$DEFAULT_PANEL_DEPLOY_DIR"; then
     deploy_dir="$DEFAULT_PANEL_DEPLOY_DIR"
+  elif is_flux_deploy_dir "/opt/flyx-panel"; then
+    deploy_dir="/opt/flyx-panel"
   else
-    echo "❌ 无法识别 FLYX 面板部署目录：未找到 FLYX 容器的 Compose 标签，当前目录和 $DEFAULT_PANEL_DEPLOY_DIR 也没有 FLYX 的部署配置"
+    echo "❌ 无法识别 FLUX 面板部署目录：未找到 FLUX 容器的 Compose 标签，当前目录和 $DEFAULT_PANEL_DEPLOY_DIR 也没有 FLUX 的部署配置"
     return 1
   fi
 
@@ -827,8 +832,8 @@ get_config_params() {
       ;;
   esac
 
-  POSTGRES_DB="flyx_panel"
-  POSTGRES_USER="flyx_panel"
+  POSTGRES_DB="flux_panel"
+  POSTGRES_USER="flux_panel"
   POSTGRES_PASSWORD=$(generate_random)
 
   if [[ "$DB_TYPE" == "postgres" ]]; then
@@ -848,11 +853,11 @@ prepare_panel_install_dir() {
   mkdir -p "$dir" || return 1
   cd "$dir" || return 1
   if [[ -f .env || -f docker-compose.yml ]]; then
-    if ! is_flyx_deploy_dir .; then
+    if ! is_flux_deploy_dir .; then
       echo "❌ $dir 中已有其他面板的部署文件，请用 PANEL_DEPLOY_DIR 指定一个空目录"
       return 1
     fi
-    read -p "⚠️ $dir 已有 FLYX 面板配置，重新安装会覆盖 .env（JWT 密钥等），继续吗？(y/N): " confirm
+    read -p "⚠️ $dir 已有 FLUX 面板配置，重新安装会覆盖 .env（JWT 密钥等），继续吗？(y/N): " confirm
     [[ "$confirm" == "y" || "$confirm" == "Y" ]] || return 1
   fi
   echo "📁 部署目录：$(pwd -P)"
@@ -885,8 +890,8 @@ install_panel() {
 JWT_SECRET=$JWT_SECRET
 FRONTEND_PORT=$FRONTEND_PORT
 BACKEND_PORT=$BACKEND_PORT
-FLYX_VERSION=$RESOLVED_VERSION
 FLUX_VERSION=$RESOLVED_VERSION
+FLYX_VERSION=$RESOLVED_VERSION
 
 DB_TYPE=$DB_TYPE
 DATABASE_URL=$DATABASE_URL
@@ -909,7 +914,7 @@ EOF
   echo "🎉 部署完成"
   echo "🌐 访问地址: http://服务器IP:$FRONTEND_PORT"
   echo "📖 部署完成后请阅读下使用文档，求求了啊，不要上去就是一顿操作"
-  echo "📚 文档地址: https://kure29.github.io/flyx/guide/getting-started"
+  echo "📚 文档地址: https://${REPO%%/*}.github.io/${REPO#*/}/guide/getting-started"
   echo "💡 默认管理员账号: admin_user / admin_user"
   echo "⚠️  登录后请立即修改默认密码！"
 
@@ -1022,9 +1027,11 @@ migrate_to_postgres() {
 
   echo "🛑 停止当前服务..."
   resolve_panel_deployment || return 1
-  sqlite_volume=$(get_env_var FLYX_SQLITE_VOLUME)
+  sqlite_volume=$(get_env_var FLUX_SQLITE_VOLUME)
+  sqlite_volume=${sqlite_volume:-$(get_env_var FLYX_SQLITE_VOLUME)}
   sqlite_volume=${sqlite_volume:-sqlite_data}
-  network=$(get_env_var FLYX_NETWORK)
+  network=$(get_env_var FLUX_NETWORK)
+  network=${network:-$(get_env_var FLYX_NETWORK)}
   network=${network:-gost-network}
   frontend_container=$(get_env_var PANEL_FRONTEND_CONTAINER)
   frontend_container=${frontend_container:-vite-frontend}

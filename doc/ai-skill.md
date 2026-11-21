@@ -1,29 +1,29 @@
 # AI Skill 使用指南
 
-让大模型直接操作 FLYX 面板的技能包。支持 OpenCode、OpenClaw、Claude Code 等工具。
+让大模型直接操作 FLUX 面板的技能包。支持 OpenCode、OpenClaw、Claude Code 等工具。
 
 ## 安装
 
 ### 方式 1: npm (推荐)
 
 ```bash
-npm install -g @flyx/skill-api
+npm install -g @flux/skill-api
 ```
 
-postinstall 脚本会自动链接到 `~/.agents/skills/flyx-api/`。
+postinstall 脚本会自动链接到 `~/.agents/skills/flux-api/`。
 
 ### 方式 2: 手动链接
 
 ```bash
-# 从 FLYX 源码
-cd /path/to/flyx
+# 从 FLUX 源码
+cd /path/to/flux
 mkdir -p ~/.agents/skills
-ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/
+ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/flux-api
 
 # 或从 GitHub
 git clone https://github.com/JesseHug/flux.git
 cd flux
-ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/
+ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/flux-api
 ```
 
 ## 配置
@@ -31,22 +31,22 @@ ln -sf $(pwd)/skills/flyx-api ~/.agents/skills/
 设置环境变量：
 
 ```bash
-export FLYX_BASE_URL="https://your-panel.example.com"
-export FLYX_USERNAME="admin"
-export FLYX_PASSWORD="your-password"
+export FLUX_BASE_URL="https://your-panel.example.com"
+export FLUX_USERNAME="admin"
+export FLUX_PASSWORD="your-password"
 ```
 
 或使用凭证文件：
 
 ```bash
-mkdir -p ~/.flyx
-cat > ~/.flyx/.env << 'EOF'
-export FLYX_BASE_URL="https://panel.example.com"
-export FLYX_USERNAME="admin"
-export FLYX_PASSWORD="your-password"
+mkdir -p ~/.flux
+cat > ~/.flux/.env << 'EOF'
+export FLUX_BASE_URL="https://panel.example.com"
+export FLUX_USERNAME="admin"
+export FLUX_PASSWORD="your-password"
 EOF
-chmod 600 ~/.flyx/.env
-source ~/.flyx/.env
+chmod 600 ~/.flux/.env
+source ~/.flux/.env
 ```
 
 ---
@@ -59,14 +59,14 @@ OpenCode 是命令行 AI 编程助手，支持通过 skills 扩展能力。
 
 **安装 skill:**
 ```bash
-npm install -g @flyx/skill-api
+npm install -g @flux/skill-api
 ```
 
 **使用:**
 ```bash
-export FLYX_BASE_URL="https://panel.example.com"
-export FLYX_USERNAME="admin"
-export FLYX_PASSWORD="your-password"
+export FLUX_BASE_URL="https://panel.example.com"
+export FLUX_USERNAME="admin"
+export FLUX_PASSWORD="your-password"
 
 opencode
 ```
@@ -87,11 +87,11 @@ OpenClaw 同样支持 skills 机制。
 
 **安装 skill:**
 ```bash
-npm install -g @flyx/skill-api
+npm install -g @flux/skill-api
 
 # 或手动链接
 mkdir -p ~/.openclaw/skills
-ln -sf /path/to/flyx/skills/flyx-api ~/.openclaw/skills/flyx-api
+ln -sf /path/to/flux/skills/flyx-api ~/.openclaw/skills/flux-api
 ```
 
 **使用:**
@@ -114,14 +114,14 @@ Claude Code 是 Anthropic 官方的命令行工具，支持通过 CLAUDE.md 扩�
 在项目根目录创建 `CLAUDE.md`：
 
 ```markdown
-# FLYX API Skill
+# FLUX API Skill
 
-你可以通过 REST API 操作 FLYX 面板。
+你可以通过 REST API 操作 FLUX 面板。
 
 ## 环境变量
-- FLYX_BASE_URL: 面板地址
-- FLYX_USERNAME: 用户名
-- FLYX_PASSWORD: 密码
+- FLUX_BASE_URL: 面板地址
+- FLUX_USERNAME: 用户名
+- FLUX_PASSWORD: 密码
 
 ## 认证规则
 - Authorization 头使用原始 JWT token，不加 "Bearer " 前缀
@@ -158,12 +158,12 @@ claude
 ```bash
 mkdir -p ~/.claude
 cat > ~/.claude/CLAUDE.md << 'EOF'
-# FLYX Panel Operations
+# FLUX Panel Operations
 
-使用 FLYX REST API 操作流量转发面板。
+使用 FLUX REST API 操作流量转发面板。
 
-环境变量: FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD
-调用方式: curl -X POST "$FLYX_BASE_URL/api/v1/..." -H "Authorization: $TOKEN"
+环境变量: FLUX_BASE_URL, FLUX_USERNAME, FLUX_PASSWORD
+调用方式: curl -X POST "$FLUX_BASE_URL/api/v1/..." -H "Authorization: $TOKEN"
 注意: Authorization 不要加 Bearer 前缀
 EOF
 ```
@@ -171,12 +171,12 @@ EOF
 #### 方式 3: 复制 SKILL.md
 
 ```bash
-cat ~/.agents/skills/flyx-api/SKILL.md >> ~/.claude/CLAUDE.md
+cat ~/.agents/skills/flux-api/SKILL.md >> ~/.claude/CLAUDE.md
 ```
 
 **示例对话:**
 ```
->>> 帮我查看 FLYX 面板上有哪些服务器
+>>> 帮我查看 FLUX 面板上有哪些服务器
 >>> 创建一个名为 test 的转发，目标地址 10.0.0.1:80
 >>> 查看我的流量使用情况
 ```
@@ -200,8 +200,8 @@ cat ~/.agents/skills/flyx-api/SKILL.md >> ~/.claude/CLAUDE.md
 ## 安全提示
 
 - ⚠️ 环境变量在进程列表中可见
-- 使用 `~/.flyx/.env` 文件并设置 `chmod 600`
-- 添加 `export HISTIGNORE="*FLYX_PASSWORD*"` 防止密码进入历史记录
+- 使用 `~/.flux/.env` 文件并设置 `chmod 600`
+- 添加 `export HISTIGNORE="*FLUX_PASSWORD*"` 防止密码进入历史记录
 - Token 仅在会话内存中缓存，不写入磁盘
 
 ## 发布
@@ -221,8 +221,8 @@ git push --tags
 
 ## 从旧命名迁移
 
-新包为 `@flyx/skill-api`，安装目录为 `~/.agents/skills/flyx-api`。旧仓库路径 `skills/flvx-api` 保留为兼容链接；新包安装程序只清理能确认属于本项目的旧链接，保留用户创建的目录和其他 Skill。
+新包为 `@flux/skill-api`，安装目录为 `~/.agents/skills/flux-api`。旧目录 `skills/flyx-api` 与旧链接 `skills/flvx-api` 保持兼容；新包安装程序只清理能确认属于本项目的旧链接，保留用户创建的目录和其他 Skill。
 
-配置建议改为 `FLYX_BASE_URL`、`FLYX_USERNAME`、`FLYX_PASSWORD`；Skill 仍接受对应的 `FLVX_*` 变量作为回退。已有 `~/.flvx/.env` 可以继续使用，不会被安装程序移动或删除。
+配置建议改为 `FLUX_BASE_URL`、`FLUX_USERNAME`、`FLUX_PASSWORD`；Skill 仍接受对应的 `FLYX_*` / `FLVX_*` 变量作为回退。已有 `~/.flyx/.env` / `~/.flvx/.env` 可以继续使用，不会被安装程序移动或删除。
 
-发布新包前，维护者需确认 npm 账号有 `@flyx` scope 的发布权限，并在旧包页面提供迁移说明。
+发布新包前，维护者需确认 npm 账号有 `@flux` scope 的发布权限，并在旧包页面提供迁移说明。

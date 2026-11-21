@@ -356,7 +356,7 @@ export const useDashboardData = (): DashboardDataState => {
         try {
           const storedTimeStr = getStoredValue(
             localStorage,
-            "flyx_announcement_seen_time",
+            "flux_announcement_seen_time",
           );
           const storedTime = storedTimeStr ? parseInt(storedTimeStr, 10) : 0;
           const updateTime = res.data.update_time || 0;
@@ -383,7 +383,7 @@ export const useDashboardData = (): DashboardDataState => {
       try {
         setStoredValue(
           localStorage,
-          "flyx_announcement_seen_time",
+          "flux_announcement_seen_time",
           announcement.update_time.toString(),
         );
       } catch {

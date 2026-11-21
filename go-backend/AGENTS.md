@@ -1,6 +1,6 @@
 # go-backend
 
-Admin API for FLYX. Go + net/http + GORM (SQLite/PostgreSQL).
+Admin API for FLUX. Go + net/http + GORM (SQLite/PostgreSQL).
 
 ## Structure
 

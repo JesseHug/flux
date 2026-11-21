@@ -44,12 +44,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	return &config, nil
 }
 
-// ApplyEnvConfig writes FLYX_AGENT_ADDR and FLYX_AGENT_SECRET (with legacy aliases) into the
+// ApplyEnvConfig writes FLUX_AGENT_ADDR and FLUX_AGENT_SECRET (with legacy aliases) into the
 // config file, creating it when missing. The Docker image is configured this
 // way; the ports the panel stored in the file are kept.
 func ApplyEnvConfig(configPath string) error {
-	addr := identity.Env("FLYX_AGENT_ADDR", "FLUX_AGENT_ADDR")
-	secret := identity.Env("FLYX_AGENT_SECRET", "FLUX_AGENT_SECRET")
+	addr := identity.Env("FLUX_AGENT_ADDR", "FLYX_AGENT_ADDR")
+	secret := identity.Env("FLUX_AGENT_SECRET", "FLYX_AGENT_SECRET")
 	if addr == "" && secret == "" {
 		return nil
 	}

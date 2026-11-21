@@ -80,14 +80,13 @@ import { Switch } from "@/shadcn-bridge/heroui/switch";
 import { formatTraffic } from "@/utils/traffic";
 import { latestProbe } from "@/utils/latest-probe";
 
-const modalBase =
-  "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
+const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 type ConfirmAction = "delete" | "regenerate" | "reset";
 
 type PageTab = "inbounds" | "sources";
 
-const TAB_KEY = "flyx_inbound_tab";
+const TAB_KEY = "flux_inbound_tab";
 
 /** Remembers the selected tab; a convenience only, so storage errors are ignored. */
 function usePageTab(): [PageTab, (t: PageTab) => void] {

@@ -18,16 +18,16 @@ agent 装在要搭节点或当中转的服务器上：连接面板，负责转�
 服务器已装好 Docker 时，可以用容器运行 agent。在安装窗口切到 **Docker**，使用面板生成的命令可识别旧容器并保留其挂载。以下命令仅用于全新安装：
 
 ```bash
-docker run -d --name flyx-agent \
+docker run -d --name flux-agent \
   --restart unless-stopped --network host --cap-add NET_ADMIN \
-  -v /etc/flyx-agent:/etc/flyx-agent \
-  -e FLYX_AGENT_ADDR=<面板地址> -e FLYX_AGENT_SECRET=<密钥> \
-  ghcr.io/jessehug/flyx-agent:<版本>
+  -v /etc/flux-agent:/etc/flux-agent \
+  -e FLUX_AGENT_ADDR=<面板地址> -e FLUX_AGENT_SECRET=<密钥> \
+  ghcr.io/jessehug/flux-agent:<版本>
 ```
 
 - `--network host`：转发和入站要按需监听任意端口，必须用宿主机网络
 - `--cap-add NET_ADMIN`：入站流量统计和白名单要用 nftables
-- `/etc/flyx-agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
+- `/etc/flux-agent`：配置、下载的内核和 agent 程序都在这里，删掉容器重建不会丢
 - `--restart unless-stopped`：不能去掉，面板一键升级靠它把容器拉起来
 - 不要和一键脚本安装的 agent 同时运行，二者会抢端口；换成 Docker 前先在原机器上卸载脚本版
 
@@ -35,17 +35,17 @@ docker run -d --name flyx-agent \
 
 **调优**：容器默认改不了宿主机内核参数。在安装窗口的 Docker 页打开 **服务器调优** 开关，命令会额外加入 `--privileged`；宿主机重启后需要在面板重新应用一次。
 
-**查看日志**：新安装使用 `docker logs -f flyx-agent`；旧安装继续使用 `docker logs -f flux_agent`。旧目录 `/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flyx-命名兼容)。
+**查看日志**：新安装使用 `docker logs -f flux-agent`；旧安装继续使用 `docker logs -f flyx-agent` 或 `docker logs -f flux_agent`。旧目录 `/etc/flyx-agent`、`/etc/flux_agent` 和服务名在升级后仍会保留，详见 [命名兼容](./upgrade.md#flux-命名兼容)。
 
 ## 用 Docker Compose 安装
 
-服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker/flyx-agent`，把配置写到 `/opt/docker/flyx-agent/docker-compose.yaml` 并设置为 `600` 权限，然后执行 `docker compose` 启动容器。
+服务器已安装 Docker Compose 时，在安装窗口切到 **Docker Compose**。生成的命令会检查并创建 `/opt/docker/flux-agent`，把配置写到 `/opt/docker/flux-agent/docker-compose.yaml` 并设置为 `600` 权限，然后执行 `docker compose` 启动容器。
 
 - 重复执行安装命令会更新 Compose 配置并重建容器
-- 启动前会检查并移除已存在的 `flyx-agent` 容器，避免容器名冲突
-- 检测到 FLYX 旧版 `flux_agent` 容器时会停止，请先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络；flux-panel / FLVX 的 `flux_agent` 容器不受影响
+- 启动前会检查并移除已存在的 `flux-agent` 容器，避免容器名冲突
+- 检测到旧版 `flyx-agent` / 本项目旧版 `flux_agent` 容器时会停止并提示先通过 Docker 安装方式完成迁移，避免新旧 agent 同时占用 host 网络；flux-panel / FLVX 的 `flux_agent` 容器不受影响
 - 需要服务器调优时，在安装窗口打开 **服务器调优**，Compose 配置会加入 `privileged: true`
-- Docker Compose 使用 `flyx-agent` 容器名和 `/etc/flyx-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
+- Docker Compose 使用 `flux-agent` 容器名和 `/etc/flux-agent` 数据目录，不要和 Docker 模式或脚本安装的 agent 同时运行
 
 ## 服务器调优
 
@@ -65,8 +65,8 @@ docker run -d --name flyx-agent \
 | 文件句柄上限 | 允许打开更多连接和文件 |
 
 - 调优结果展示实测带宽、出口网卡、测速对端、测量时间、参数来源和验证吞吐。与 tcpfit 0.5.9 一致，计算缓冲区的 RTT 使用 **150 ms 路径估值**，不是到测速对端的延迟；对端只用于测量带宽，不能代表实际用户线路。
-- 基础参数立即生效，写入 `/etc/sysctl.d/99-flyx-tuning.conf`，重启后保持；原值在修改前备份，**恢复原配置** 会撤销 FLYX 的调优和整形。
-- 上限类参数如果服务器本来就更高，保持原值；FLYX 之前管理的参数会按本次实测值重新计算（可以调小）。
+- 基础参数立即生效，写入 `/etc/sysctl.d/99-flux-tuning.conf`，重启后保持；原值在修改前备份，**恢复原配置** 会撤销 FLUX 的调优和整形。
+- 上限类参数如果服务器本来就更高，保持原值；FLUX 之前管理的参数会按本次实测值重新计算（可以调小）。
 - 系统不支持的项（比如内核没有 BBR）会跳过并提示
 - 自动调优需要配套升级面板和节点 Agent；旧 Agent 会显示升级提示，不会悄悄沿用固定带宽。
 
@@ -78,11 +78,11 @@ docker run -d --name flyx-agent \
 
 深度优化复用 [tcpfit](https://github.com/Kylin010/tcpfit) 0.5.9 的限速器拐点扫描：先检查不限速吞吐和重传，再按带宽推导扫描区间、步长和安全余量。只有取得可靠拐点，才应用 **HTB 全局上限 + fq pacing**，并验证吞吐；验证失败会恢复原队列和原整形启动配置。没有明确拐点、对端过慢、结果不确定或超过扫描范围时，保留原整形配置。
 
-整形配置由 `flyx-tuning-qdisc.service` 在启动时恢复。扫描前保存出口队列及参数；发现外部整形器或自定义流量分类时会停止，避免覆盖现有配置。Agent 意外退出后，下次启动会尝试恢复中断扫描前的队列。
+整形配置由 `flux-tuning-qdisc.service` 在启动时恢复。扫描前保存出口队列及参数；发现外部整形器或自定义流量分类时会停止，避免覆盖现有配置。Agent 意外退出后，下次启动会尝试恢复中断扫描前的队列。
 
 Docker 节点仍需以 `--privileged` 运行。容器没有 systemd，已提交的整形会随 Agent 启动重新下发；宿主机重启后，基础 sysctl 调优仍需重新应用。
 
-FLYX 保留自己的内核参数备份和恢复机制，内置固定版本的 tcpfit 测速与扫描代码，不会下载执行最新版脚本，也不会修改默认路由初始窗口、创建 swap 或启用 tcpfit 遥测。
+FLUX 保留自己的内核参数备份和恢复机制，内置固定版本的 tcpfit 测速与扫描代码，不会下载执行最新版脚本，也不会修改默认路由初始窗口、创建 swap 或启用 tcpfit 遥测。
 
 ## 国内服务器安装慢
 
@@ -111,7 +111,7 @@ Alpine Linux 最小化安装若未包含 `curl`，可使用系统自带的 `wget
 wget -O install.sh https://github.com/JesseHug/flux/releases/latest/download/install.sh && chmod +x install.sh && ./install.sh
 ```
 
-脚本会在 Alpine 上自动安装 Bash、`curl` 和 CA 证书，并使用 OpenRC 注册、启动和管理 `flyx-agent` 服务；其他受支持的 Linux 发行版继续使用 systemd。
+脚本会在 Alpine 上自动安装 Bash、`curl` 和 CA 证书，并使用 OpenRC 注册、启动和管理 `flux-agent` 服务；其他受支持的 Linux 发行版继续使用 systemd。
 
 **安装过程中会提示输入：**
 - **服务器地址**: 面板端的通信地址（通常是 `http://<面板IP>:<后端端口>`，例如 `http://1.2.3.4:6365`）。
@@ -126,9 +126,9 @@ wget -O install.sh https://github.com/JesseHug/flux/releases/latest/download/ins
 
 ## 验证安装
 安装完成后，服务会自动启动。
-- systemd 查看状态: `systemctl status flyx-agent`
-- Alpine/OpenRC 查看状态: `rc-service flyx-agent status`
-- Docker 查看状态: `docker ps -f name=flyx-agent`
+- systemd 查看状态: `systemctl status flux-agent`
+- Alpine/OpenRC 查看状态: `rc-service flux-agent status`
+- Docker 查看状态: `docker ps -f name=flux-agent`
 - 回到面板 **服务器** 页，该服务器状态应显示为 **在线**
 
 服务器离线的排查见 [常见问题](./faq.md#服务器显示离线)。
@@ -142,12 +142,12 @@ wget -O install.sh https://github.com/JesseHug/flux/releases/latest/download/ins
 在 **服务器** 页删除服务器（单个或多选批量删除）时，确认窗口里的 **同时卸载服务器上的 agent** 默认勾选，会一并清理这台服务器：
 
 - 停止所有内核（Xray / sing-box 等），删除 agent 建的 nftables 规则（流量统计、入站白名单、端口跳跃）
-- 恢复 [服务器调优](#服务器调优) 前的系统参数和网卡队列，删除调优写入的 `/etc/sysctl.d/99-flyx-tuning.conf` 和 `/etc/modules-load.d/flyx-bbr.conf`
+- 恢复 [服务器调优](#服务器调优) 前的系统参数和网卡队列，删除调优写入的 `/etc/sysctl.d/99-flux-tuning.conf` 和 `/etc/modules-load.d/flux-bbr.conf`
 - 使用 nftables 转发的服务器，面板会通过 SSH 清除它下发的转发规则
-- 脚本安装的 agent：停止并删除 systemd / OpenRC 服务，删除安装目录（`/etc/flyx-agent`，旧安装为 `/etc/flux_agent`）
+- 脚本安装的 agent：停止并删除 systemd / OpenRC 服务，删除安装目录（`/etc/flux-agent`，旧安装为 `/etc/flyx-agent` 或 `/etc/flux_agent`）
 
 服务器离线时，面板先删除记录，等这台服务器的 agent 下次连上面板时再自动卸载（180 天内有效）。只想把服务器换到另一个面板时，取消勾选即可，服务器上的 agent 保持原样。
 
-**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flyx-agent`（旧安装为 `flux_agent`）删除容器即可；用 Docker Compose 安装的，执行 `docker compose -f /opt/docker/flyx-agent/docker-compose.yaml down` 后删除 `/opt/docker/flyx-agent` 目录（里面的 Compose 文件含有节点密钥）。
+**Docker 安装的 agent** 无法删除自己的容器：卸载后会清空数据目录里的配置和密钥，容器保留但不再连接面板。在服务器上执行 `docker rm -f flux-agent`（旧安装为 `flyx-agent` 或 `flux_agent`）删除容器即可；用 Docker Compose 安装的，执行 `docker compose -f /opt/docker/flux-agent/docker-compose.yaml down` 后删除 `/opt/docker/flux-agent` 目录（里面的 Compose 文件含有节点密钥）。
 
 自动卸载需要 agent 3.4.2 及以上；更旧的 agent 会提示 **版本过旧**，请在服务器上运行安装脚本选择 **卸载**。

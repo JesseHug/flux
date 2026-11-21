@@ -1234,6 +1234,9 @@ type agentKernelStatus struct {
 	Epoch        string               `json:"epoch"`
 	NftAvailable bool                 `json:"nftAvailable"`
 	NftError     string               `json:"nftError"`
+	StatsCapable bool                 `json:"statsCapable"`
+	StatsUsers   []agentUserCounter   `json:"statsUsers"`
+	StatsEpoch   string               `json:"statsEpoch"`
 }
 
 func remarshal(in interface{}, out interface{}) error {
@@ -1302,12 +1305,14 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		proxy = proxyURL
 	}
 	node, _ := h.repo.GetNodeByID(k.NodeID)
+	useXrayStats := k.KernelType == kernel.TypeXray && node != nil && !isLiteForwardMode(node.ForwardMode) && node.StatsCapable == 1 && nftCannotMark(node.NftError)
 	rendered, err := kernel.RenderWith(k.KernelType, inbounds, kernel.RenderOptions{
 		RuleSetMirror:      proxy,
 		SingboxHTTPClient:  kernelCaps(k.Version).SingboxHTTPClient,
 		SingboxSnell:       kernelCaps(k.Version).SingboxSnell,
 		SingboxPreferGoDNS: kernelCaps(k.Version).SingboxPreferGoDNS,
 		NoUserMarks:        node != nil && nftCannotMark(node.NftError),
+		KernelStats:        useXrayStats,
 	})
 	if err != nil {
 		return nil, "", err
@@ -1329,6 +1334,9 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	}
 	if len(rendered.UserMarks) > 0 {
 		payload["userMarks"] = rendered.UserMarks
+	}
+	if rendered.StatsAddr != "" {
+		payload["statsAddr"] = rendered.StatsAddr
 	}
 	if k.KernelType == kernel.TypeXray {
 		// The agent keeps the 分流 data files next to Xray up to date.
@@ -1791,6 +1799,10 @@ func (h *Handler) refreshNodeKernelStatus(nodeID int64) {
 }
 
 func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
+	h.pollNodeKernelsWith(nodeID, evenIfNone, true)
+}
+
+func (h *Handler) pollNodeKernelsWith(nodeID int64, evenIfNone bool, triggerSubSync bool) {
 	kernels, err := h.repo.ListNodeKernels(nodeID)
 	if err != nil || (len(kernels) == 0 && !evenIfNone) {
 		return
@@ -1818,11 +1830,15 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 	if err != nil {
 		log.Printf("nft status save failed node_id=%d err=%v", nodeID, err)
 	}
-	// Whether users get marked outbounds depends on the node's nftables
-	// permission (nftCannotMark). Re-render when that may have changed the
-	// config, including the first poll after a panel upgrade.
+	statsChanged, err := h.repo.SetNodeStatsCapable(nodeID, status.StatsCapable)
+	if err != nil {
+		log.Printf("stats capable save failed node_id=%d err=%v", nodeID, err)
+	}
+	// Whether users get marked outbounds or Xray StatsService depends on the
+	// node's nftables permission and StatsCapable flag. Re-render when that
+	// may have changed the config, including the first poll after an upgrade.
 	reapplied := map[int64]bool{}
-	if nftChanged || nftCannotMark(nftErr) {
+	if nftChanged || statsChanged || nftCannotMark(nftErr) {
 		for _, k := range kernels {
 			if k.AppliedHash != k.ConfigHash || k.ConfigHash == "" {
 				continue // never applied, or a failed apply left for the user
@@ -1898,51 +1914,77 @@ func (h *Handler) pollNodeKernels(nodeID int64, evenIfNone bool) {
 		_ = h.repo.UpdateNodeKernelFields(k.ID, fields)
 	}
 
-	if !status.NftAvailable {
+	hasNftTraffic := status.NftAvailable && (len(status.Counters) > 0 || len(status.Users) > 0)
+	hasStatsTraffic := len(status.StatsUsers) > 0
+	if !hasNftTraffic && !hasStatsTraffic {
 		return
 	}
-	if len(status.Counters) == 0 && len(status.Users) == 0 {
-		return
-	}
-	samples := make([]repo.InboundCounterSample, 0, len(status.Counters))
+	var samples []repo.InboundCounterSample
 	var realmCounters []agentKernelCounter
-	for _, c := range status.Counters {
-		if _, ok := kernel.RealmForwardID(c.InboundID); ok {
-			realmCounters = append(realmCounters, c)
-			continue
+	if status.NftAvailable {
+		samples = make([]repo.InboundCounterSample, 0, len(status.Counters))
+		for _, c := range status.Counters {
+			if _, ok := kernel.RealmForwardID(c.InboundID); ok {
+				realmCounters = append(realmCounters, c)
+				continue
+			}
+			samples = append(samples, repo.InboundCounterSample{
+				InboundID: c.InboundID,
+				Protocol:  c.Proto,
+				Direction: c.Dir,
+				Epoch:     status.Epoch,
+				Bytes:     c.Bytes,
+			})
 		}
-		samples = append(samples, repo.InboundCounterSample{
-			InboundID: c.InboundID,
-			Protocol:  c.Proto,
-			Direction: c.Dir,
-			Epoch:     status.Epoch,
-			Bytes:     c.Bytes,
-		})
+	}
+	snapshotEpoch := status.Epoch
+	if snapshotEpoch == "" {
+		snapshotEpoch = status.StatsEpoch
 	}
 	var batch flowUploadBatch
 	var quotas map[int64]*model.UserQuotaView
-	applied, err := h.repo.ApplyCounterSnapshot(nodeID, "kernel", sequence, status.Epoch, func(tx *repo.Repository) error {
-		users := make([]repo.SubscriptionCounterSample, 0, len(status.Users))
-		for _, c := range status.Users {
-			users = append(users, repo.SubscriptionCounterSample{SubscriptionID: c.ID, Direction: c.Dir, Bytes: c.Bytes})
+	applied, err := h.repo.ApplyCounterSnapshot(nodeID, "kernel", sequence, snapshotEpoch, func(tx *repo.Repository) error {
+		if status.NftAvailable && len(status.Users) > 0 {
+			users := make([]repo.SubscriptionCounterSample, 0, len(status.Users))
+			for _, c := range status.Users {
+				users = append(users, repo.SubscriptionCounterSample{SubscriptionID: c.ID, Direction: c.Dir, Bytes: c.Bytes})
+			}
+			if err := tx.ApplySubscriptionCounterSamples(nodeID, status.Epoch, users, now); err != nil {
+				return err
+			}
 		}
-		if err := tx.ApplySubscriptionCounterSamples(nodeID, status.Epoch, users, now); err != nil {
+		if len(status.StatsUsers) > 0 {
+			statsEpoch := status.StatsEpoch
+			if statsEpoch == "" {
+				statsEpoch = snapshotEpoch
+			}
+			users := make([]repo.SubscriptionCounterSample, 0, len(status.StatsUsers))
+			for _, c := range status.StatsUsers {
+				users = append(users, repo.SubscriptionCounterSample{SubscriptionID: c.ID, Direction: c.Dir, Source: "stats", Bytes: c.Bytes})
+			}
+			if err := tx.ApplySubscriptionCounterSamples(nodeID, statsEpoch, users, now); err != nil {
+				return err
+			}
+		}
+		if status.NftAvailable {
+			if err := tx.ApplyInboundCounterSamples(samples, now); err != nil {
+				return err
+			}
+			var err error
+			batch, quotas, err = (&Handler{repo: tx}).applyRealmCountersTx(nodeID, status.Epoch, realmCounters, time.UnixMilli(now))
 			return err
 		}
-		if err := tx.ApplyInboundCounterSamples(samples, now); err != nil {
-			return err
-		}
-		var err error
-		batch, quotas, err = (&Handler{repo: tx}).applyRealmCountersTx(nodeID, status.Epoch, realmCounters, time.UnixMilli(now))
-		return err
+		return nil
 	})
 	if err != nil {
 		log.Printf("kernel traffic apply failed node_id=%d err=%v", nodeID, err)
 		return
 	}
 	if applied {
-		h.enforceFlowUploadBatch(nodeID, batch, quotas)
-		if len(status.Users) > 0 {
+		if status.NftAvailable {
+			h.enforceFlowUploadBatch(nodeID, batch, quotas)
+		}
+		if triggerSubSync && (len(status.Users) > 0 || len(status.StatsUsers) > 0) {
 			h.syncSubscriptions(time.UnixMilli(now))
 		}
 	}

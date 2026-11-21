@@ -8,30 +8,42 @@ import (
 )
 
 const (
-	AgentName     = "flyx-agent"
-	LiteAgentName = "flyx-agent-lite"
+	AgentName     = "flux-agent"
+	LiteAgentName = "flux-agent-lite"
 )
 
-func Env(name, legacy string) string {
-	if value, ok := os.LookupEnv(name); ok {
-		return value
+// IsKnownAgentName reports whether base matches a current or legacy agent
+// executable/service name handled in-place by upgrades and uninstallers.
+func IsKnownAgentName(base string) bool {
+	switch base {
+	case AgentName, LiteAgentName, "flyx-agent", "flyx-agent-lite", "flux_agent":
+		return true
+	default:
+		return false
 	}
-	return os.Getenv(legacy)
+}
+
+func Env(names ...string) string {
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			return value
+		}
+	}
+	return ""
 }
 
 // Old agents install an upgrade at their existing binary path. Following the
 // running executable preserves its service, kernels, spool and rollback file.
 func installation(executable string) (dir, binary, service string) {
-	switch filepath.Base(executable) {
-	case AgentName, LiteAgentName, "flux_agent":
-		return filepath.Dir(executable), executable, filepath.Base(executable)
-	default:
-		return "/etc/flyx-agent", "/etc/flyx-agent/flyx-agent", AgentName
+	base := filepath.Base(executable)
+	if IsKnownAgentName(base) {
+		return filepath.Dir(executable), executable, base
 	}
+	return "/etc/flux-agent", "/etc/flux-agent/flux-agent", AgentName
 }
 
 func DataDir() string {
-	if dir := strings.TrimSpace(Env("FLYX_AGENT_DATA_DIR", "FLUX_AGENT_DATA_DIR")); dir != "" {
+	if dir := strings.TrimSpace(Env("FLUX_AGENT_DATA_DIR", "FLYX_AGENT_DATA_DIR")); dir != "" {
 		return dir
 	}
 	executable, _ := os.Executable()

@@ -8,6 +8,7 @@ import { ErrorBoundary, reloadOnce } from "./components/error-boundary";
 import { IS_DEMO, installDemo } from "./demo";
 import { DemoBanner } from "./demo/banner";
 import { Provider } from "./provider.tsx";
+import { registerPanelUpdater } from "./utils/sw-update";
 import "@/styles/globals.css";
 
 // A page chunk from the previous build is gone after an upgrade: reload
@@ -28,6 +29,7 @@ const SW_UPDATE_INTERVAL = 60 * 1000;
 const updateSW = registerSW({
   immediate: true,
   onRegisteredSW(_swUrl, registration) {
+    registerPanelUpdater(registration, updateSW);
     if (!registration) return;
     let checking = false;
     const check = () => {

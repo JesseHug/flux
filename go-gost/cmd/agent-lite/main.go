@@ -26,7 +26,7 @@ func main() {
 	flag.Parse()
 
 	if printVersion {
-		fmt.Fprintf(os.Stdout, "flyx-agent-lite %s (%s %s/%s)\n",
+		fmt.Fprintf(os.Stdout, "flux-agent-lite %s (%s %s/%s)\n",
 			version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		os.Exit(0)
 	}

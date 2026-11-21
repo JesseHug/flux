@@ -48,7 +48,7 @@ export default defineConfig({
       },
     }),
   ],
-  // The online demo is served from the docs site (VITE_BASE=/flyx/demo/).
+  // The online demo is served from the docs site (VITE_BASE=/flux/demo/).
   base: process.env.VITE_BASE || "/",
   resolve: {
     alias: {

@@ -219,7 +219,7 @@ func TestUpdateEnvVersionAppendsMissingValue(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 
-	want := "JWT_SECRET=test\nFLYX_VERSION=2.1.9\nFLUX_VERSION=2.1.9\n"
+	want := "JWT_SECRET=test\nFLUX_VERSION=2.1.9\nFLYX_VERSION=2.1.9\n"
 	if string(data) != want {
 		t.Fatalf("env content = %q, want %q", string(data), want)
 	}

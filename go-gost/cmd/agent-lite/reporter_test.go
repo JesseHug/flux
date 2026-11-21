@@ -82,8 +82,8 @@ func TestHTTPGetWithFallback(t *testing.T) {
 func TestApplyAndLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
-	t.Setenv("FLYX_AGENT_ADDR", "panel.example.com:6365")
-	t.Setenv("FLYX_AGENT_SECRET", "abc123")
+	t.Setenv("FLUX_AGENT_ADDR", "panel.example.com:6365")
+	t.Setenv("FLUX_AGENT_SECRET", "abc123")
 
 	if err := applyEnvConfig(path); err != nil {
 		t.Fatalf("applyEnvConfig error = %v", err)

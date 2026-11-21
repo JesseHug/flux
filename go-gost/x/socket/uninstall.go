@@ -118,12 +118,12 @@ func wipeDataDirForUninstall(dir, binary string) error {
 // installation directory. Every step runs even if an earlier one fails.
 func buildAgentUninstallScript(binaryPath, dir string) (string, error) {
 	name := filepath.Base(binaryPath)
-	if name != identity.AgentName && name != "flux_agent" {
+	if !identity.IsKnownAgentName(name) {
 		return "", fmt.Errorf("无法识别的 agent 安装：%s", binaryPath)
 	}
 	// Only ever an installation directory of its own, never e.g. /usr/local/bin.
 	if !filepath.IsAbs(dir) || filepath.Clean(dir) != filepath.Dir(binaryPath) ||
-		(filepath.Base(dir) != identity.AgentName && filepath.Base(dir) != "flux_agent") {
+		!identity.IsKnownAgentName(filepath.Base(dir)) {
 		return "", fmt.Errorf("拒绝删除无法识别的目录：%s", dir)
 	}
 	q := tuneShellQuote

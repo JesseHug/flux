@@ -36,8 +36,8 @@ func TestUpgradeUpdatesBothVersionNamesForRollback(t *testing.T) {
 }
 
 func TestPanelVersionUsesNewNameBeforeLegacy(t *testing.T) {
-	t.Setenv("FLUX_VERSION", "old")
-	t.Setenv("FLYX_VERSION", "new")
+	t.Setenv("FLYX_VERSION", "old")
+	t.Setenv("FLUX_VERSION", "new")
 	if got := currentPanelVersion(); got != "new" {
 		t.Fatalf("version = %q", got)
 	}

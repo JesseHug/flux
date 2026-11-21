@@ -1,8 +1,8 @@
 # Legacy defaults let pre-migration upgraders reuse their existing resources.
-# New installations write explicit FLYX resource names into .env.
+# New installations write explicit FLUX resource names into .env.
 services:
   backend:
-    image: ghcr.io/kure29/flyx-panel-backend:${FLYX_VERSION:-${FLUX_VERSION:-latest}}
+    image: ghcr.io/kure29/flux-panel-backend:${FLUX_VERSION:-${FLYX_VERSION:-latest}}
     container_name: ${PANEL_BACKEND_CONTAINER:-flux-panel-backend}
     restart: unless-stopped
     logging:
@@ -15,21 +15,22 @@ services:
       DB_PATH: /app/data/gost.db
       DATABASE_URL: ${DATABASE_URL:-}
       JWT_SECRET: ${JWT_SECRET}
-      FLYX_WEBAUTHN_ORIGIN: ${FLYX_WEBAUTHN_ORIGIN-${FLVX_WEBAUTHN_ORIGIN:-}}
-      FLVX_WEBAUTHN_ORIGIN: ${FLYX_WEBAUTHN_ORIGIN-${FLVX_WEBAUTHN_ORIGIN:-}}
+      FLUX_WEBAUTHN_ORIGIN: ${FLUX_WEBAUTHN_ORIGIN-${FLYX_WEBAUTHN_ORIGIN-${FLVX_WEBAUTHN_ORIGIN:-}}}
+      FLYX_WEBAUTHN_ORIGIN: ${FLUX_WEBAUTHN_ORIGIN-${FLYX_WEBAUTHN_ORIGIN-${FLVX_WEBAUTHN_ORIGIN:-}}}
+      FLVX_WEBAUTHN_ORIGIN: ${FLUX_WEBAUTHN_ORIGIN-${FLYX_WEBAUTHN_ORIGIN-${FLVX_WEBAUTHN_ORIGIN:-}}}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       SERVER_ADDR: :6365
       TZ: Asia/Shanghai
-      FLYX_VERSION: ${FLYX_VERSION:-${FLUX_VERSION:-dev}}
-      FLUX_VERSION: ${FLYX_VERSION:-${FLUX_VERSION:-dev}}
-      PANEL_DEPLOY_DIR: /opt/flyx-panel
+      FLUX_VERSION: ${FLUX_VERSION:-${FLYX_VERSION:-dev}}
+      FLYX_VERSION: ${FLUX_VERSION:-${FLYX_VERSION:-dev}}
+      PANEL_DEPLOY_DIR: /opt/flux-panel
       PANEL_BACKEND_CONTAINER: ${PANEL_BACKEND_CONTAINER:-flux-panel-backend}
     ports:
       - "${BACKEND_PORT}:6365"
     volumes:
       - sqlite_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/opt/flyx-panel
+      - ./:/opt/flux-panel
     networks:
       - gost-network
     stop_grace_period: 30s
@@ -66,7 +67,7 @@ services:
       start_period: 20s
 
   frontend:
-    image: ghcr.io/kure29/flyx-panel-frontend:${FLYX_VERSION:-${FLUX_VERSION:-latest}}
+    image: ghcr.io/kure29/flux-panel-frontend:${FLUX_VERSION:-${FLYX_VERSION:-latest}}
     container_name: ${PANEL_FRONTEND_CONTAINER:-vite-frontend}
     restart: unless-stopped
     logging:
@@ -85,10 +86,10 @@ services:
 
 volumes:
   sqlite_data:
-    name: ${FLYX_SQLITE_VOLUME:-sqlite_data}
+    name: ${FLUX_SQLITE_VOLUME:-${FLYX_SQLITE_VOLUME:-sqlite_data}}
     driver: local
   postgres_data:
-    name: ${FLYX_POSTGRES_VOLUME:-postgres_data}
+    name: ${FLUX_POSTGRES_VOLUME:-${FLYX_POSTGRES_VOLUME:-postgres_data}}
     driver: local
 
 
@@ -97,7 +98,7 @@ networks:
   # com.docker.compose.network label and refuses to reuse an existing
   # network whose label differs, which breaks every upgrade.
   gost-network:
-    name: ${FLYX_NETWORK:-gost-network}
+    name: ${FLUX_NETWORK:-${FLYX_NETWORK:-gost-network}}
     driver: bridge
     enable_ipv6: true
     ipam:

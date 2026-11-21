@@ -9,7 +9,13 @@ import (
 
 type obj = map[string]interface{}
 
-func renderXray(inbounds []Inbound) (string, error) {
+const (
+	xrayStatsPort = 19850
+	xrayStatsAddr = "127.0.0.1:19850"
+	xrayAPITag    = "flux-api"
+)
+
+func renderXray(inbounds []Inbound, opts RenderOptions) (string, error) {
 	list := make([]interface{}, 0, len(inbounds))
 	var fallbackRules []interface{}
 	for _, in := range inbounds {
@@ -27,6 +33,15 @@ func renderXray(inbounds []Inbound) (string, error) {
 			fallbackRules = append(fallbackRules, fbRules...)
 		}
 	}
+	if opts.KernelStats {
+		list = append(list, obj{
+			"tag":      xrayAPITag,
+			"listen":   "127.0.0.1",
+			"port":     xrayStatsPort,
+			"protocol": "dokodemo-door",
+			"settings": obj{"address": "127.0.0.1"},
+		})
+	}
 	cfg := obj{
 		"log":      obj{"loglevel": "warning"},
 		"inbounds": list,
@@ -34,6 +49,21 @@ func renderXray(inbounds []Inbound) (string, error) {
 			obj{"protocol": "freedom", "tag": "direct"},
 			obj{"protocol": "blackhole", "tag": "block"},
 		},
+	}
+	if opts.KernelStats {
+		cfg["stats"] = obj{}
+		cfg["api"] = obj{
+			"tag":      xrayAPITag,
+			"services": []string{"StatsService"},
+		}
+		cfg["policy"] = obj{
+			"levels": obj{
+				"0": obj{
+					"statsUserUplink":   true,
+					"statsUserDownlink": true,
+				},
+			},
+		}
 	}
 	// Chained inbounds leave through their target; their rules come first
 	// so their users do not match the direct per-user rules below.
@@ -43,6 +73,11 @@ func renderXray(inbounds []Inbound) (string, error) {
 	}
 	if len(fallbackRules) > 0 {
 		rules = append(fallbackRules, rules...)
+	}
+	if opts.KernelStats {
+		rules = append([]interface{}{
+			obj{"type": "field", "inboundTag": []string{xrayAPITag}, "outboundTag": xrayAPITag},
+		}, rules...)
 	}
 	outbounds := append(cfg["outbounds"].([]interface{}), chained...)
 	// Each user leaves through a direct outbound whose sockets carry the

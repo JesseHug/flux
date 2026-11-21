@@ -87,6 +87,9 @@ type ApplyRequest struct {
 	// GeoData are data files kept current next to the main binary (Xray's
 	// geosite.dat / geoip.dat).
 	GeoData []GeoFile `json:"geoData,omitempty"`
+	// StatsAddr is the local loopback gRPC address (e.g. "127.0.0.1:19850")
+	// where the kernel exposes its StatsService when enabled by the panel.
+	StatsAddr string `json:"statsAddr,omitempty"`
 }
 
 type State struct {
@@ -124,6 +127,9 @@ type Status struct {
 	Epoch        string        `json:"epoch"`
 	NftAvailable bool          `json:"nftAvailable"`
 	NftError     string        `json:"nftError,omitempty"`
+	StatsCapable bool          `json:"statsCapable,omitempty"`
+	StatsUsers   []UserCounter `json:"statsUsers,omitempty"`
+	StatsEpoch   string        `json:"statsEpoch,omitempty"`
 }
 
 type adapter struct {

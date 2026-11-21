@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"go-backend/internal/config"
 	"go-backend/internal/store/model"
-	"gorm.io/gorm"
 	"net/url"
 	"strconv"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 func TestPostgresDailyRollPreservesConcurrentUsage(t *testing.T) {
@@ -113,7 +114,7 @@ func TestPostgresQuotaRollDoesNotLockUnchangedUsers(t *testing.T) {
 
 func openQuotaMaintenancePostgresTest(t *testing.T) *Repository {
 	t.Helper()
-	dsn := config.IdentityEnv("FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
+	dsn := config.IdentityEnv("FLUX_POSTGRES_TEST_DSN", "FLYX_POSTGRES_TEST_DSN", "FLVX_POSTGRES_TEST_DSN")
 	if dsn == "" {
 		t.Skip("requires temporary PostgreSQL")
 	}

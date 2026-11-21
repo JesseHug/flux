@@ -101,7 +101,7 @@ func (h *Handler) notifyConfigForNode(nodeID int64, event string) (notifySetting
 	}
 	app := strings.TrimSpace(cfg["app_name"])
 	if app == "" {
-		app = "FLYX"
+		app = "FLUX"
 	}
 	settings := notifySettings{
 		TelegramToken:   strings.TrimSpace(cfg[notifyConfigTGToken]),

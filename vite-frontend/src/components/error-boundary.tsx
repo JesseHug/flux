@@ -21,11 +21,11 @@ function isChunkLoadError(error: unknown): boolean {
 export function reloadOnce(): boolean {
   try {
     const last = Number(
-      getStoredValue(sessionStorage, "flyx_chunk_reload") || 0,
+      getStoredValue(sessionStorage, "flux_chunk_reload") || 0,
     );
 
     if (Date.now() - last < 60000) return false;
-    setStoredValue(sessionStorage, "flyx_chunk_reload", String(Date.now()));
+    setStoredValue(sessionStorage, "flux_chunk_reload", String(Date.now()));
   } catch {
     return false;
   }

@@ -20,7 +20,7 @@ func TestRenderUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := r.Files[0].Content
-	if !strings.Contains(cfg, `"00000000-0000-4000-8000-000000000000"`) || !strings.Contains(cfg, `"u7@flyx"`) ||
+	if !strings.Contains(cfg, `"00000000-0000-4000-8000-000000000000"`) || !strings.Contains(cfg, `"u7@flux"`) ||
 		strings.Count(cfg, `"flow": "xtls-rprx-vision"`) != 2 {
 		t.Fatalf("xray must keep the owner and add the user with the same flow:\n%s", cfg)
 	}
@@ -77,7 +77,7 @@ func TestRenderUserMarks(t *testing.T) {
 	}
 	cfg := r.Files[0].Content
 	if len(r.UserMarks) != 1 || r.UserMarks[0] != 7 || !strings.Contains(cfg, `"mark": 1180041223`) ||
-		!strings.Contains(cfg, `"u7@flyx"`) || !strings.Contains(cfg, `"outboundTag": "flyx-u7"`) {
+		!strings.Contains(cfg, `"u7@flux"`) || !strings.Contains(cfg, `"outboundTag": "flux-u7"`) {
 		t.Fatalf("xray must route the user through its marked outbound (%v):\n%s", r.UserMarks, cfg)
 	}
 
@@ -87,7 +87,7 @@ func TestRenderUserMarks(t *testing.T) {
 	}
 	cfg = r.Files[0].Content
 	if len(r.UserMarks) != 1 || !strings.Contains(cfg, `"routing_mark": 1180041223`) ||
-		!strings.Contains(cfg, `"outbound": "flyx-u7"`) || !strings.Contains(cfg, `"final": "direct"`) {
+		!strings.Contains(cfg, `"outbound": "flux-u7"`) || !strings.Contains(cfg, `"final": "direct"`) {
 		t.Fatalf("sing-box must route the user through its marked outbound:\n%s", cfg)
 	}
 
@@ -125,7 +125,7 @@ func TestRenderNoUserMarks(t *testing.T) {
 		}
 		cfg := r.Files[0].Content
 		if len(r.UserMarks) != 0 || strings.Contains(cfg, "routing_mark") || strings.Contains(cfg, `"mark"`) ||
-			strings.Contains(cfg, "flyx-u7") || strings.Contains(cfg, "-u7\"") {
+			strings.Contains(cfg, "flux-u7") || strings.Contains(cfg, "-u7\"") {
 			t.Fatalf("%s must not mark users (%v):\n%s", kt, r.UserMarks, cfg)
 		}
 		// The user's own credentials still work.
@@ -136,5 +136,29 @@ func TestRenderNoUserMarks(t *testing.T) {
 		if err != nil || len(marked.UserMarks) != 1 || marked.Hash == r.Hash {
 			t.Fatalf("%s: marks must still apply by default (%v %v)", kt, marked.UserMarks, err)
 		}
+	}
+}
+
+func TestRenderXrayKernelStats(t *testing.T) {
+	vless := Inbound{ID: 1, Protocol: ProtocolVLESS, Port: 443,
+		Settings: Settings{UUID: "00000000-0000-4000-8000-000000000000"}, Users: chainUser}
+	if err := Normalize(TypeXray, &vless); err != nil {
+		t.Fatal(err)
+	}
+	r, err := RenderWith(TypeXray, []Inbound{vless}, RenderOptions{KernelStats: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := r.Files[0].Content
+	if r.StatsAddr != "127.0.0.1:19850" || len(r.UserMarks) != 0 {
+		t.Fatalf("unexpected stats render metadata: addr=%q marks=%v", r.StatsAddr, r.UserMarks)
+	}
+	for _, want := range []string{`"StatsService"`, `"statsUserUplink": true`, `"flux-api"`, `"dokodemo-door"`, `"u7@flux"`} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("expected %q in xray stats config:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(cfg, `"sockopt"`) || strings.Contains(cfg, "flux-u7") {
+		t.Fatalf("xray KernelStats must not emit socket marks:\n%s", cfg)
 	}
 }

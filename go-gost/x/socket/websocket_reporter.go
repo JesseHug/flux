@@ -1595,8 +1595,8 @@ func buildAgentRestartScript(tmpPath, binaryPath string) string {
 // Both native service managers use the name of the installed executable.
 func agentServiceCommand(binaryPath, action string) string {
 	name := identity.AgentName
-	if filepath.Base(binaryPath) == "flux_agent" {
-		name = "flux_agent"
+	if base := filepath.Base(binaryPath); identity.IsKnownAgentName(base) {
+		name = base
 	}
 	return "(if command -v rc-service >/dev/null 2>&1 && [ -f /etc/alpine-release ]; then rc-service " + name + " " + action + "; else systemctl " + action + " " + name + "; fi)"
 }
@@ -2163,7 +2163,7 @@ func icmpPing(target string, timeout time.Duration) (time.Duration, error) {
 		Body: &icmp.Echo{
 			ID:   id,
 			Seq:  seq,
-			Data: []byte("FLYX-PING"),
+			Data: []byte("FLUX-PING"),
 		},
 	}
 	wb, err := wm.Marshal(nil)

@@ -326,7 +326,7 @@ func TestNftScriptOnlyCounts(t *testing.T) {
 	if strings.Index(script, "in_1_tcp") > strings.Index(script, "in_2_tcp") {
 		t.Fatal("rules must be sorted for a stable signature")
 	}
-	if !strings.HasPrefix(script, "table inet flyx_kernel {}\ndelete table inet flyx_kernel\n") {
+	if !strings.HasPrefix(script, "table inet flux_kernel {}\ndelete table inet flux_kernel\n") {
 		t.Fatalf("script must recreate the table atomically: %s", script)
 	}
 }

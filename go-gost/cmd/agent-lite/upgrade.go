@@ -132,7 +132,7 @@ func (r *liteReporter) handleUpgradeAgent(raw json.RawMessage) error {
 	}
 
 	r.sendUpgradeProgress("installing", 80, "准备重启...")
-	if identity.Env("FLYX_AGENT_CONTAINER", "FLUX_AGENT_CONTAINER") == "1" {
+	if identity.Env("FLUX_AGENT_CONTAINER", "FLYX_AGENT_CONTAINER") == "1" {
 		if err := os.Rename(tmpPath, binaryPath); err != nil {
 			_ = os.Remove(tmpPath)
 			return fmt.Errorf("替换程序失败: %w", err)
@@ -166,7 +166,7 @@ func (r *liteReporter) handleRollbackAgent() error {
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
 		return fmt.Errorf("没有可用的备份文件，无法回退")
 	}
-	if identity.Env("FLYX_AGENT_CONTAINER", "FLUX_AGENT_CONTAINER") == "1" {
+	if identity.Env("FLUX_AGENT_CONTAINER", "FLYX_AGENT_CONTAINER") == "1" {
 		tmpPath := binaryPath + ".new"
 		if err := copyFileSimple(backupPath, tmpPath, 0o755); err != nil {
 			return fmt.Errorf("写入备份失败: %w", err)
@@ -213,7 +213,7 @@ func copyFileSimple(src, dst string, mode os.FileMode) error {
 
 func agentServiceCommand(binaryPath, action string) string {
 	name := identity.AgentName
-	if base := filepath.Base(binaryPath); base == "flux_agent" || base == identity.LiteAgentName {
+	if base := filepath.Base(binaryPath); identity.IsKnownAgentName(base) {
 		name = base
 	}
 	return "(if command -v rc-service >/dev/null 2>&1 && [ -f /etc/alpine-release ]; then rc-service " + name + " " + action + "; else systemctl " + action + " " + name + "; fi)"

@@ -98,13 +98,13 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_USER: flyx_test
-          POSTGRES_PASSWORD: flyx_test_pass
-          POSTGRES_DB: flyx_test
+          POSTGRES_USER: flux_test
+          POSTGRES_PASSWORD: flux_test_pass
+          POSTGRES_DB: flux_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U flyx_test -d flyx_test"
+          --health-cmd "pg_isready -U flux_test -d flux_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
@@ -125,7 +125,7 @@ jobs:
 
       - name: Run PostgreSQL contract test
         env:
-          FLYX_POSTGRES_TEST_DSN: 'postgres://flyx_test:flyx_test_pass@127.0.0.1:5432/flyx_test?sslmode=disable'
+          FLUX_POSTGRES_TEST_DSN: 'postgres://flux_test:flux_test_pass@127.0.0.1:5432/flux_test?sslmode=disable'
         run: go test ./tests/contract ./internal/store/repo -run 'TestPostgres(NodeCreateRepairsMissingIDDefaultContract|DailyRollPreservesConcurrentUsage)$' -count=1
 
   agent:

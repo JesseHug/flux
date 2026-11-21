@@ -49,6 +49,7 @@ import { GistBackup } from "@/pages/config/gist-backup";
 import { isAdmin } from "@/utils/auth";
 import { getCachedConfigs, configCache, updateSiteConfig } from "@/config/site";
 import { githubCallbackUrl } from "@/utils/github-login";
+import { forceRefreshPanelCache } from "@/utils/sw-update";
 import {
   DEFAULT_TUNNEL_QUALITY_INTERVAL_SEC,
   MAX_TUNNEL_QUALITY_INTERVAL_SEC,
@@ -465,6 +466,7 @@ export default function ConfigPage() {
     useState<SystemUpgradeVersionApiData | null>(null);
   const [systemUpgradeChecking, setSystemUpgradeChecking] = useState(false);
   const [systemUpgradeExecuting, setSystemUpgradeExecuting] = useState(false);
+  const [refreshingPanelCache, setRefreshingPanelCache] = useState(false);
   const [systemUpgradeLoading, setSystemUpgradeLoading] = useState(true);
   const [systemUpgradeModalOpen, setSystemUpgradeModalOpen] = useState(false);
   const [systemUpgradeReleases, setSystemUpgradeReleases] = useState<
@@ -702,6 +704,18 @@ export default function ConfigPage() {
       toast.error("面板升级失败，请重试");
     } finally {
       setSystemUpgradeExecuting(false);
+    }
+  };
+
+  const handleRefreshPanelCache = async () => {
+    setRefreshingPanelCache(true);
+    try {
+      await forceRefreshPanelCache();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "刷新面板缓存失败，请重试",
+      );
+      setRefreshingPanelCache(false);
     }
   };
 
@@ -1885,7 +1899,15 @@ export default function ConfigPage() {
               </>
             )}
 
-            <div className="flex justify-end gap-2 border-t border-divider pt-3">
+            <div className="flex flex-wrap justify-end gap-2 border-t border-divider pt-3">
+              <Button
+                isLoading={refreshingPanelCache}
+                size="sm"
+                variant="flat"
+                onPress={handleRefreshPanelCache}
+              >
+                刷新前端缓存
+              </Button>
               <Button
                 isLoading={systemUpgradeChecking}
                 size="sm"

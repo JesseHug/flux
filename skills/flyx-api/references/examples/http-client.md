@@ -11,9 +11,9 @@ Complete, runnable examples for various languages.
 set -e
 
 # Configuration
-BASE_URL="${FLYX_BASE_URL:?FLYX_BASE_URL not set}"
-USERNAME="${FLYX_USERNAME:?FLYX_USERNAME not set}"
-PASSWORD="${FLYX_PASSWORD:?FLYX_PASSWORD not set}"
+BASE_URL="${FLUX_BASE_URL:?FLUX_BASE_URL not set}"
+USERNAME="${FLUX_USERNAME:?FLUX_USERNAME not set}"
+PASSWORD="${FLUX_PASSWORD:?FLUX_PASSWORD not set}"
 
 # Login and get token
 echo "Logging in..."
@@ -56,8 +56,8 @@ api_call "/api/v1/forward/list" '{}' | jq '.data.list[] | {name, tunnel: .tunnel
 
 ```bash
 #!/bin/bash
-BASE_URL="${FLYX_BASE_URL}"
-TOKEN="${FLYX_TOKEN}"  # Pre-obtained token
+BASE_URL="${FLUX_BASE_URL}"
+TOKEN="${FLUX_TOKEN}"  # Pre-obtained token
 
 create_forward() {
   local name="$1"
@@ -87,21 +87,21 @@ create_forward "$@"
 
 ```python
 #!/usr/bin/env python3
-"""FLYX API Client"""
+"""FLUX API Client"""
 
 import os
 import requests
 from typing import Optional, Any, Dict, List
 
-class FlvxError(Exception):
-    """FLYX API Error"""
+class FluxError(Exception):
+    """FLUX API Error"""
     def __init__(self, code: int, message: str):
         self.code = code
         self.message = message
         super().__init__(message)
 
-class FlvxClient:
-    """FLYX API Client with auto-login"""
+class FluxClient:
+    """FLUX API Client with auto-login"""
     
     def __init__(
         self, 
@@ -109,12 +109,12 @@ class FlvxClient:
         username: Optional[str] = None,
         password: Optional[str] = None
     ):
-        self.base_url = base_url or os.environ.get("FLYX_BASE_URL")
-        self.username = username or os.environ.get("FLYX_USERNAME")
-        self.password = password or os.environ.get("FLYX_PASSWORD")
+        self.base_url = base_url or os.environ.get("FLUX_BASE_URL")
+        self.username = username or os.environ.get("FLUX_USERNAME")
+        self.password = password or os.environ.get("FLUX_PASSWORD")
         
         if not all([self.base_url, self.username, self.password]):
-            raise ValueError("Missing credentials. Set FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD")
+            raise ValueError("Missing credentials. Set FLUX_BASE_URL, FLUX_USERNAME, FLUX_PASSWORD")
         
         self.token: Optional[str] = None
     
@@ -128,7 +128,7 @@ class FlvxClient:
         result = resp.json()
         
         if result["code"] != 0:
-            raise FlvxError(result["code"], result["msg"])
+            raise FluxError(result["code"], result["msg"])
         
         self.token = result["data"]["token"]
     
@@ -159,7 +159,7 @@ class FlvxClient:
             self.token = None
             return self.request(endpoint, data)
         
-        raise FlvxError(result["code"], result["msg"])
+        raise FluxError(result["code"], result["msg"])
     
     # Convenience methods
     
@@ -209,7 +209,7 @@ class FlvxClient:
 
 # Usage example
 if __name__ == "__main__":
-    client = FlvxClient()
+    client = FluxClient()
     
     # Get package info
     pkg = client.get_package()
@@ -230,7 +230,7 @@ if __name__ == "__main__":
 ### Complete Client Class
 
 ```typescript
-// flyx-client.ts
+// flux-client.ts
 interface APIResponse<T = unknown> {
   code: number;
   msg: string;
@@ -238,10 +238,10 @@ interface APIResponse<T = unknown> {
   ts: number;
 }
 
-class FlvxError extends Error {
+class FluxError extends Error {
   constructor(public code: number, message: string) {
     super(message);
-    this.name = "FlvxError";
+    this.name = "FluxError";
   }
 }
 
@@ -273,7 +273,7 @@ interface Forward {
   out_flow: number;
 }
 
-class FlvxClient {
+class FluxClient {
   private baseUrl: string;
   private username: string;
   private password: string;
@@ -284,12 +284,12 @@ class FlvxClient {
     username?: string;
     password?: string;
   }) {
-    this.baseUrl = options?.baseUrl ?? process.env.FLYX_BASE_URL ?? "";
-    this.username = options?.username ?? process.env.FLYX_USERNAME ?? "";
-    this.password = options?.password ?? process.env.FLYX_PASSWORD ?? "";
+    this.baseUrl = options?.baseUrl ?? process.env.FLUX_BASE_URL ?? "";
+    this.username = options?.username ?? process.env.FLUX_USERNAME ?? "";
+    this.password = options?.password ?? process.env.FLUX_PASSWORD ?? "";
 
     if (!this.baseUrl || !this.username || !this.password) {
-      throw new Error("Missing credentials. Set FLYX_BASE_URL, FLYX_USERNAME, FLYX_PASSWORD");
+      throw new Error("Missing credentials. Set FLUX_BASE_URL, FLUX_USERNAME, FLUX_PASSWORD");
     }
   }
 
@@ -305,7 +305,7 @@ class FlvxClient {
 
     const result: APIResponse<{ token: string }> = await res.json();
     if (result.code !== 0) {
-      throw new FlvxError(result.code, result.msg);
+      throw new FluxError(result.code, result.msg);
     }
 
     this.token = result.data!.token;
@@ -337,7 +337,7 @@ class FlvxClient {
       return this.request<T>(endpoint, data);
     }
 
-    throw new FlvxError(result.code, result.msg);
+    throw new FluxError(result.code, result.msg);
   }
 
   // Convenience methods
@@ -387,11 +387,11 @@ class FlvxClient {
   }
 }
 
-export { FlvxClient, FlvxError };
+export { FluxClient, FluxError };
 
 // Usage
 async function main() {
-  const client = new FlvxClient();
+  const client = new FluxClient();
 
   // Get package info
   const pkg = await client.getPackage();
@@ -423,8 +423,8 @@ main().catch(console.error);
 ### Complete Client Package
 
 ```go
-// flyx/client.go
-package flyx
+// flux/client.go
+package flux
 
 import (
 	"bytes"
@@ -449,20 +449,20 @@ type Response struct {
 	TS   int64           `json:"ts"`
 }
 
-type FlvxError struct {
+type FluxError struct {
 	Code    int
 	Message string
 }
 
-func (e *FlvxError) Error() string {
-	return fmt.Sprintf("FLYX error %d: %s", e.Code, e.Message)
+func (e *FluxError) Error() string {
+	return fmt.Sprintf("FLUX error %d: %s", e.Code, e.Message)
 }
 
 func NewClient() *Client {
 	return &Client{
-		BaseURL:  os.Getenv("FLYX_BASE_URL"),
-		Username: os.Getenv("FLYX_USERNAME"),
-		Password: os.Getenv("FLYX_PASSWORD"),
+		BaseURL:  os.Getenv("FLUX_BASE_URL"),
+		Username: os.Getenv("FLUX_USERNAME"),
+		Password: os.Getenv("FLUX_PASSWORD"),
 	}
 }
 
@@ -485,7 +485,7 @@ func (c *Client) Login() error {
 	}
 	
 	if result.Code != 0 {
-		return &FlvxError{Code: result.Code, Message: result.Msg}
+		return &FluxError{Code: result.Code, Message: result.Msg}
 	}
 	
 	c.Token = result.Data.Token
@@ -547,7 +547,7 @@ func (c *Client) ListNodes() ([]map[string]interface{}, error) {
 	}
 	
 	if result.Code != 0 {
-		return nil, &FlvxError{Code: result.Code, Message: "failed to list nodes"}
+		return nil, &FluxError{Code: result.Code, Message: "failed to list nodes"}
 	}
 	
 	return result.Data.List, nil
@@ -572,7 +572,7 @@ func (c *Client) CreateForward(name string, tunnelID int, remoteAddr string) (ma
 	}
 	
 	if result.Code != 0 {
-		return nil, &FlvxError{Code: result.Code, Message: result.Msg}
+		return nil, &FluxError{Code: result.Code, Message: result.Msg}
 	}
 	
 	return result.Data, nil

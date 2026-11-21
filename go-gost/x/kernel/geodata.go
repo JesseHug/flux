@@ -234,6 +234,6 @@ func (m *Manager) logGeo(kernelType, msg string) {
 	inst := m.instances[kernelType]
 	m.mu.Unlock()
 	if inst != nil {
-		inst.logs.add("[flyx] " + msg)
+		inst.logs.add("[flux] " + msg)
 	}
 }

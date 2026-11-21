@@ -198,7 +198,7 @@ func traceroute(host string, maxHops, family int) (TracerouteResponse, error) {
 		seq := round*tracerouteMaxHops + ttl
 		msg := icmp.Message{
 			Type: tp.echo,
-			Body: &icmp.Echo{ID: id, Seq: seq, Data: []byte("flyx-trace")},
+			Body: &icmp.Echo{ID: id, Seq: seq, Data: []byte("flux-trace")},
 		}
 		// The kernel fills in the ICMPv6 checksum.
 		b, err := msg.Marshal(nil)

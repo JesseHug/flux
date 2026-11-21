@@ -92,11 +92,11 @@ test_update_agent_asks_for_proxy_config() (
 
   SERVICE_MANAGER="systemd"
   INSTALL_DIR=$(mktemp -d)
-  cat > "$INSTALL_DIR/flyx-agent" <<'EOF'
+  cat > "$INSTALL_DIR/flux-agent" <<'EOF'
 #!/bin/bash
 echo "old version"
 EOF
-  chmod +x "$INSTALL_DIR/flyx-agent"
+  chmod +x "$INSTALL_DIR/flux-agent"
 
   local ask_called="0"
 
@@ -163,11 +163,11 @@ test_install_agent_keeps_binary_when_download_fails() (
 
   SERVICE_MANAGER="systemd"
   INSTALL_DIR=$(mktemp -d)
-  cat > "$INSTALL_DIR/flyx-agent" <<'EOF'
+  cat > "$INSTALL_DIR/flux-agent" <<'EOF'
 #!/bin/bash
 echo "old version"
 EOF
-  chmod +x "$INSTALL_DIR/flyx-agent"
+  chmod +x "$INSTALL_DIR/flux-agent"
   SERVER_ADDR="panel.example.com:443"
   SECRET="secret"
   DOWNLOAD_URL="https://example.com/gost"
@@ -184,7 +184,7 @@ EOF
   ( install_agent >/dev/null ) || rc="$?"
 
   assert_equals "1" "$rc" "install_agent should fail when the download artifact is missing"
-  [[ -f "$INSTALL_DIR/flyx-agent" ]] || fail "install_agent should keep the existing flyx-agent binary when download fails"
+  [[ -f "$INSTALL_DIR/flux-agent" ]] || fail "install_agent should keep the existing flux-agent binary when download fails"
 )
 
 test_update_agent_cleans_stale_download_when_download_fails() (
@@ -193,16 +193,16 @@ test_update_agent_cleans_stale_download_when_download_fails() (
 
   SERVICE_MANAGER="systemd"
   INSTALL_DIR=$(mktemp -d)
-  cat > "$INSTALL_DIR/flyx-agent" <<'EOF'
+  cat > "$INSTALL_DIR/flux-agent" <<'EOF'
 #!/bin/bash
 echo "old version"
 EOF
-  chmod +x "$INSTALL_DIR/flyx-agent"
-  cat > "$INSTALL_DIR/flyx-agent.new" <<'EOF'
+  chmod +x "$INSTALL_DIR/flux-agent"
+  cat > "$INSTALL_DIR/flux-agent.new" <<'EOF'
 #!/bin/bash
 echo "stale version"
 EOF
-  chmod +x "$INSTALL_DIR/flyx-agent.new"
+  chmod +x "$INSTALL_DIR/flux-agent.new"
 
   local rc="0"
 
@@ -217,7 +217,7 @@ EOF
   update_agent >/dev/null || rc="$?"
 
   assert_equals "1" "$rc" "update_agent should fail when the download artifact is missing"
-  [[ ! -f "$INSTALL_DIR/flyx-agent.new" ]] || fail "update_agent should remove stale download artifacts before retrying"
+  [[ ! -f "$INSTALL_DIR/flux-agent.new" ]] || fail "update_agent should remove stale download artifacts before retrying"
 )
 
 test_install_agent_writes_json_safe_config() (
@@ -226,7 +226,7 @@ test_install_agent_writes_json_safe_config() (
 
   SERVICE_MANAGER="systemd"
   INSTALL_DIR=$(mktemp -d)
-  AGENT_SYSTEMD_SERVICE_FILE="$INSTALL_DIR/flyx-agent.service"
+  AGENT_SYSTEMD_SERVICE_FILE="$INSTALL_DIR/flux-agent.service"
   SERVER_ADDR='panel"addr'
   SECRET='sec\ret"1'
   DOWNLOAD_URL="https://example.com/gost"
@@ -282,8 +282,8 @@ test_install_agent_uses_openrc() (
 
   local temp_root
   temp_root=$(mktemp -d)
-  INSTALL_DIR="$temp_root/flyx-agent"
-  AGENT_OPENRC_SERVICE_FILE="$temp_root/init.d/flyx-agent"
+  INSTALL_DIR="$temp_root/flux-agent"
+  AGENT_OPENRC_SERVICE_FILE="$temp_root/init.d/flux-agent"
   SERVICE_MANAGER="openrc"
   SERVER_ADDR="panel.example.com:443"
   SECRET="secret"
@@ -330,17 +330,17 @@ EOF
   [[ -x "$AGENT_OPENRC_SERVICE_FILE" ]] || fail "OpenRC service file should be executable"
   grep -Fq '#!/sbin/openrc-run' "$AGENT_OPENRC_SERVICE_FILE" || \
     fail "OpenRC service should use openrc-run"
-  grep -Fq "command=\"$INSTALL_DIR/flyx-agent\"" "$AGENT_OPENRC_SERVICE_FILE" || \
-    fail "OpenRC service should launch the installed flyx-agent binary"
+  grep -Fq "command=\"$INSTALL_DIR/flux-agent\"" "$AGENT_OPENRC_SERVICE_FILE" || \
+    fail "OpenRC service should launch the installed flux-agent binary"
   grep -Fq 'command_background="yes"' "$AGENT_OPENRC_SERVICE_FILE" || \
-    fail "OpenRC service should run flyx-agent in the background"
+    fail "OpenRC service should run flux-agent in the background"
   if command -v openrc-run >/dev/null 2>&1; then
     "$AGENT_OPENRC_SERVICE_FILE" describe >/dev/null 2>&1
   fi
-  [[ "$rc_update_calls" == *"add flyx-agent default"* ]] || \
-    fail "OpenRC install should enable flyx-agent in the default runlevel"
-  [[ "$rc_service_calls" == *"start"* ]] || fail "OpenRC install should start flyx-agent"
-  [[ "$rc_service_calls" == *"status"* ]] || fail "OpenRC install should verify flyx-agent status"
+  [[ "$rc_update_calls" == *"add flux-agent default"* ]] || \
+    fail "OpenRC install should enable flux-agent in the default runlevel"
+  [[ "$rc_service_calls" == *"start"* ]] || fail "OpenRC install should start flux-agent"
+  [[ "$rc_service_calls" == *"status"* ]] || fail "OpenRC install should verify flux-agent status"
 )
 
 test_remove_agent_service_uses_openrc() (
@@ -350,7 +350,7 @@ test_remove_agent_service_uses_openrc() (
   local temp_root
   temp_root=$(mktemp -d)
   SERVICE_MANAGER="openrc"
-  AGENT_OPENRC_SERVICE_FILE="$temp_root/init.d/flyx-agent"
+  AGENT_OPENRC_SERVICE_FILE="$temp_root/init.d/flux-agent"
   mkdir -p "$(dirname "$AGENT_OPENRC_SERVICE_FILE")"
   : > "$AGENT_OPENRC_SERVICE_FILE"
 
@@ -369,9 +369,9 @@ test_remove_agent_service_uses_openrc() (
   disable_agent_service
   remove_agent_service
 
-  [[ "$rc_service_calls" == *"stop"* ]] || fail "OpenRC uninstall should stop flyx-agent"
-  [[ "$rc_update_calls" == *"del flyx-agent default"* ]] || \
-    fail "OpenRC uninstall should remove flyx-agent from the default runlevel"
+  [[ "$rc_service_calls" == *"stop"* ]] || fail "OpenRC uninstall should stop flux-agent"
+  [[ "$rc_update_calls" == *"del flux-agent default"* ]] || \
+    fail "OpenRC uninstall should remove flux-agent from the default runlevel"
   [[ ! -e "$AGENT_OPENRC_SERVICE_FILE" ]] || fail "OpenRC uninstall should remove its service file"
 )
 

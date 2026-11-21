@@ -397,10 +397,10 @@ func callTuneEngine(ctx context.Context, action string, d *tuneDetection, args .
 
 func parseTuneSample(out string) (*tuneSample, error) {
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(line, "FLYX_SAMPLE=") {
+		if !strings.HasPrefix(line, "FLUX_SAMPLE=") {
 			continue
 		}
-		f := strings.Fields(strings.TrimPrefix(line, "FLYX_SAMPLE="))
+		f := strings.Fields(strings.TrimPrefix(line, "FLUX_SAMPLE="))
 		if len(f) < 2 {
 			break
 		}
@@ -438,7 +438,7 @@ func recoverAutomaticTuningOnStart() {
 	}
 	defer tuningOperation.Unlock()
 	if err := recoverTuneTransaction(); err != nil {
-		fmt.Printf("FLYX 调优恢复失败：%v\n", err)
+		fmt.Printf("FLUX 调优恢复失败：%v\n", err)
 		return
 	}
 	// Containers have no systemd; reapply a committed shaper when the agent
@@ -448,7 +448,7 @@ func recoverAutomaticTuningOnStart() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if _, err := tuneCommand(ctx, "bash", filepath.Join(tuneEngineDir(), "shape.sh")); err != nil {
-				fmt.Printf("FLYX 整形恢复失败：%v\n", err)
+				fmt.Printf("FLUX 整形恢复失败：%v\n", err)
 			}
 		}
 	}
@@ -505,7 +505,7 @@ func executeTuneJob(ctx context.Context, mode string, maxGB float64) error {
 		candidate.BandwidthSource = "iperf3 四并发实测"
 		candidate.RTTSource = "按 tcpfit 使用 150 ms 路径估值（非测速对端 RTT）"
 		candidate.MeasuredAt = time.Now().UnixMilli()
-		// Preserve an existing FLYX shaper when re-running basic tuning.
+		// Preserve an existing FLUX shaper when re-running basic tuning.
 		if old := loadTuneDetection(); old != nil {
 			if old.ShapeMbps > 0 && old.Interface != candidate.Interface {
 				return fmt.Errorf("出口已变化，请先恢复原配置以撤销旧出口整形，再重新调优")

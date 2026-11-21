@@ -33,7 +33,7 @@ func TestAgentUninstallScriptRemovesServiceAndDirectory(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell script")
 	}
-	for _, name := range []string{"flyx-agent", "flux_agent"} {
+	for _, name := range []string{"flux-agent", "flyx-agent", "flux_agent"} {
 		t.Run(name, func(t *testing.T) {
 			root, dir, binary := fakeInstall(t, name)
 			if err := os.MkdirAll(uninstallSystemdDir, 0o755); err != nil {
@@ -79,11 +79,11 @@ func TestAgentUninstallScriptRemovesServiceAndDirectory(t *testing.T) {
 
 func TestAgentUninstallScriptRejectsForeignDirectories(t *testing.T) {
 	for _, tc := range []struct{ binary, dir string }{
-		{"/usr/local/bin/flyx-agent", "/usr/local/bin"},
-		{"/etc/flyx-agent/flyx-agent", "/etc"},
-		{"/etc/flyx-agent/flyx-agent", "/"},
+		{"/usr/local/bin/flux-agent", "/usr/local/bin"},
+		{"/etc/flux-agent/flux-agent", "/etc"},
+		{"/etc/flux-agent/flux-agent", "/"},
 		{"/tmp/x/other-binary", "/tmp/x"},
-		{"/etc/flyx-agent/flyx-agent", "relative/flyx-agent"},
+		{"/etc/flux-agent/flux-agent", "relative/flux-agent"},
 	} {
 		if _, err := buildAgentUninstallScript(tc.binary, tc.dir); err == nil {
 			t.Errorf("%s in %s accepted", tc.binary, tc.dir)
@@ -92,7 +92,7 @@ func TestAgentUninstallScriptRejectsForeignDirectories(t *testing.T) {
 }
 
 func TestContainerUninstallKeepsOnlyMarkerAndBinary(t *testing.T) {
-	_, dir, binary := fakeInstall(t, "flyx-agent")
+	_, dir, binary := fakeInstall(t, "flux-agent")
 	oldTune, oldKernels, oldExit := uninstallRestoreTuning, uninstallKernels, uninstallExit
 	oldDir, oldBin, oldContainer, oldStart := uninstallDataDir, uninstallBinaryPath, uninstallInContainer, uninstallStartScript
 	t.Cleanup(func() {
@@ -133,7 +133,7 @@ func TestContainerUninstallKeepsOnlyMarkerAndBinary(t *testing.T) {
 }
 
 func TestNativeUninstallStartsScriptAfterCleanup(t *testing.T) {
-	_, dir, binary := fakeInstall(t, "flyx-agent")
+	_, dir, binary := fakeInstall(t, "flux-agent")
 	oldTune, oldKernels, oldExit := uninstallRestoreTuning, uninstallKernels, uninstallExit
 	oldDir, oldBin, oldContainer, oldStart := uninstallDataDir, uninstallBinaryPath, uninstallInContainer, uninstallStartScript
 	t.Cleanup(func() {

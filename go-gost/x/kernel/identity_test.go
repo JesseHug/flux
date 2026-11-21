@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -37,6 +38,7 @@ func TestNftIdentityUsesLiveTablesWhenStateIsLost(t *testing.T) {
 
 func TestNftIdentityRefusesAmbiguousOrUnreadableTables(t *testing.T) {
 	for _, output := range []string{
+		"table inet flux_kernel\ntable inet flyx_kernel\n",
 		"table inet flyx_kernel\ntable inet flvx_kernel\n",
 		"signal: segmentation fault (core dumped)",
 		"permission denied",
@@ -80,7 +82,7 @@ func TestNftIdentityApplyFailureKeepsPreviousEpoch(t *testing.T) {
 	if err := n.sync([]Port{{InboundID: 7, Port: 443, Network: "tcp"}}, nil); err == nil {
 		t.Fatal("apply failure was ignored")
 	}
-	if n.state != before {
+	if !reflect.DeepEqual(n.state, before) {
 		t.Fatal("failed apply paired an existing epoch with a different table")
 	}
 }
@@ -116,7 +118,7 @@ func TestNewNftIdentity(t *testing.T) {
 	if n.state.Table != nftTable {
 		t.Fatalf("new table = %q", n.state.Table)
 	}
-	for _, table := range []string{nftTable, legacyNftTable} {
+	for _, table := range []string{nftTable, legacyFlyxNftTable, legacyNftTable} {
 		raw := []byte("table inet " + table + " {\n\tcounter uup_7 {\n\t\tpackets 1 bytes 123\n\t}\n}\n")
 		_, users, err := parseCounters(raw)
 		if err != nil || len(users) != 1 || users[0].Bytes != 123 {
@@ -126,7 +128,7 @@ func TestNewNftIdentity(t *testing.T) {
 }
 
 // testdata/nft-list-counters.txt is real `nft list counters table inet
-// flyx_kernel` output; nft 1.0.6, 1.0.9 and 1.1.3 print it identically.
+// flux_kernel` output; nft 1.0.6, 1.0.9 and 1.1.3 print it identically.
 func TestParseCountersFromNftTextListing(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("testdata", "nft-list-counters.txt"))
 	if err != nil {
@@ -148,7 +150,7 @@ func TestParseCountersFromNftTextListing(t *testing.T) {
 	if !found {
 		t.Fatalf("missing in_2_udp bytes: %+v", counters)
 	}
-	if _, _, err := parseCounters([]byte("table inet flyx_kernel {\n\tcounter in_1_tcp {\n\t\tpackets 1 bytes x\n\t}\n}\n")); err == nil {
+	if _, _, err := parseCounters([]byte("table inet flux_kernel {\n\tcounter in_1_tcp {\n\t\tpackets 1 bytes x\n\t}\n}\n")); err == nil {
 		t.Fatal("malformed byte count accepted")
 	}
 }
@@ -161,7 +163,7 @@ func TestUninstallRemovesCurrentAndLegacyTables(t *testing.T) {
 	nftRunner = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		switch joined := strings.Join(args, " "); {
 		case joined == "list tables":
-			return []byte("table inet flyx_kernel\ntable inet flvx_kernel\ntable inet firewalld\ntable ip nat\n"), nil
+			return []byte("table inet flux_kernel\ntable inet flyx_kernel\ntable inet flvx_kernel\ntable inet firewalld\ntable ip nat\n"), nil
 		case strings.HasPrefix(joined, "delete table inet "):
 			deleted = append(deleted, args[3])
 			return nil, nil
@@ -174,7 +176,7 @@ func TestUninstallRemovesCurrentAndLegacyTables(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Tables of other software are never touched.
-	if strings.Join(deleted, ",") != "flyx_kernel,flvx_kernel" {
+	if strings.Join(deleted, ",") != "flux_kernel,flyx_kernel,flvx_kernel" {
 		t.Fatalf("deleted %v", deleted)
 	}
 

@@ -12,10 +12,10 @@ func TestAgentIdentityEnvPreservesSavedConfiguration(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"addr":"saved","secret":"saved-secret","http":8080,"tls":443,"socks":1080}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FLUX_AGENT_ADDR", "legacy")
-	t.Setenv("FLUX_AGENT_SECRET", "legacy-secret")
-	t.Setenv("FLYX_AGENT_ADDR", "canonical")
-	t.Setenv("FLYX_AGENT_SECRET", "canonical-secret")
+	t.Setenv("FLYX_AGENT_ADDR", "legacy")
+	t.Setenv("FLYX_AGENT_SECRET", "legacy-secret")
+	t.Setenv("FLUX_AGENT_ADDR", "canonical")
+	t.Setenv("FLUX_AGENT_SECRET", "canonical-secret")
 	if err := ApplyEnvConfig(path); err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +27,8 @@ func TestAgentIdentityEnvPreservesSavedConfiguration(t *testing.T) {
 	if cfg.Addr != "canonical" || cfg.Secret != "canonical-secret" || cfg.Http != 8080 || cfg.Tls != 443 || cfg.Socks != 1080 {
 		t.Fatalf("configuration = %+v", cfg)
 	}
-	t.Setenv("FLYX_AGENT_ADDR", "")
-	t.Setenv("FLYX_AGENT_SECRET", "")
+	t.Setenv("FLUX_AGENT_ADDR", "")
+	t.Setenv("FLUX_AGENT_SECRET", "")
 	if err := ApplyEnvConfig(path); err != nil {
 		t.Fatal(err)
 	}

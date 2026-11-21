@@ -19,11 +19,11 @@ func fakeProcSys(t *testing.T, available string, skip ...string) string {
 	oldProc, oldConf, oldBackup, oldModprobe := tuneProcRoot, tuneConfPath, tuneBackupPath, tuneModprobe
 	oldParams, oldMem, oldBBR := tuneParamsPath, tuneMeminfo, tuneBBRModule
 	tuneProcRoot = filepath.Join(dir, "proc")
-	tuneConfPath = filepath.Join(dir, "sysctl.d", "99-flyx-tuning.conf")
+	tuneConfPath = filepath.Join(dir, "sysctl.d", "99-flux-tuning.conf")
 	tuneBackupPath = filepath.Join(dir, "agent", "tuning-backup.json")
 	tuneParamsPath = filepath.Join(dir, "agent", "tuning-params.json")
 	tuneMeminfo = filepath.Join(dir, "meminfo")
-	tuneBBRModule = filepath.Join(dir, "modules-load.d", "flyx-bbr.conf")
+	tuneBBRModule = filepath.Join(dir, "modules-load.d", "flux-bbr.conf")
 	tuneModprobe = func(string) error { return nil }
 	t.Cleanup(func() {
 		tuneProcRoot, tuneConfPath, tuneBackupPath, tuneModprobe = oldProc, oldConf, oldBackup, oldModprobe

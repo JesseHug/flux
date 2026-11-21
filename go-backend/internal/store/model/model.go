@@ -104,6 +104,9 @@ type Node struct {
 	// NftError is why the agent cannot use nftables (not installed, no
 	// permission in a container), as last reported; empty when it can.
 	NftError string `gorm:"column:nft_error;type:text;not null;default:''"`
+	// StatsCapable records whether the node's running agent supports querying
+	// Xray's built-in StatsService over loopback gRPC.
+	StatsCapable int `gorm:"column:stats_capable;not null;default:0"`
 }
 
 func (Node) TableName() string { return "node" }

@@ -5,8 +5,8 @@ import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 
 export type GroupBy = "node" | "kernel";
 
-const GROUP_BY_KEY = "flyx_inbound_group_by";
-const COLLAPSED_KEY = "flyx_inbound_collapsed";
+const GROUP_BY_KEY = "flux_inbound_group_by";
+const COLLAPSED_KEY = "flux_inbound_collapsed";
 
 function readStorage(key: string): string | null {
   try {

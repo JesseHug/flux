@@ -18,7 +18,7 @@ export interface NodeHubState {
   install?: InstallRequest;
 }
 
-const TAB_KEY = "flyx_node_tab";
+const TAB_KEY = "flux_node_tab";
 
 function readTab(): NodeTab {
   try {

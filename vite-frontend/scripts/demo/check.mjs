@@ -1,5 +1,5 @@
 // Checks the built online demo the way a visitor sees it: serves the build
-// under /flyx/demo/, opens every page in headless Chrome (as admin, then as
+// under /flux/demo/, opens every page in headless Chrome (as admin, then as
 // the demo user) and fails on page errors, pages that bounce to the login
 // screen, and API calls the recording doesn't answer ("[demo] not
 // recorded", see README.md). No dependencies: Chrome DevTools Protocol over

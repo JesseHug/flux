@@ -19,8 +19,17 @@ import (
 	"time"
 )
 
-const nftTable = "flyx_kernel"
+const nftTable = "flux_kernel"
 const legacyNftTable = "flvx_kernel"
+const legacyFlyxNftTable = "flyx_kernel"
+
+func isLegacyNftTable(name string) bool {
+	return name == legacyFlyxNftTable || name == legacyNftTable
+}
+
+func isManagedNftTable(name string) bool {
+	return name == nftTable || isLegacyNftTable(name)
+}
 
 // nftRunner executes `nft` with a script on stdin (or arguments). It is a
 // variable so tests can capture scripts without root.
@@ -290,12 +299,13 @@ func nftScript(rules []counterRule, guards map[int64]allowGuard, hops []hopRule,
 }
 
 type nftState struct {
-	Table     string `json:"table,omitempty"`
-	Signature string `json:"signature"`
-	Epoch     string `json:"epoch"`
+	Table     string           `json:"table,omitempty"`
+	Signature string           `json:"signature"`
+	Epoch     string           `json:"epoch"`
+	Offsets   map[string]int64 `json:"offsets,omitempty"`
 }
 
-// nftCounters owns the FLYX kernel table (or an existing legacy table). The epoch changes whenever the
+// nftCounters owns the FLUX kernel table (or an existing legacy table). The epoch changes whenever the
 // table is rebuilt so the panel knows the counters restarted from zero.
 type nftCounters struct {
 	mu        sync.Mutex
@@ -313,7 +323,7 @@ func newNftCounters(baseDir string) *nftCounters {
 			if state.Table == "" {
 				state.Table = legacyNftTable
 			}
-			if state.Table == nftTable || state.Table == legacyNftTable {
+			if isManagedNftTable(state.Table) {
 				n.state = state
 			}
 		}
@@ -327,6 +337,12 @@ func (n *nftCounters) hasState() bool {
 	return n.state.Signature != ""
 }
 
+func (n *nftCounters) hasOffsets() bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return len(n.state.Offsets) > 0
+}
+
 // Inspect live tables as well as disk state: nft.json can be lost while the
 // rules remain installed. Never create a second ruleset beside the old one.
 // Listings use nft's text output: older nft builds (1.0.6 in Debian bookworm
@@ -336,32 +352,30 @@ func (n *nftCounters) resolveTable(ctx context.Context) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	current, legacy := false, false
+	var found []string
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 || fields[0] != "table" || fields[1] != "inet" {
 			continue
 		}
-		switch strings.Trim(fields[2], `"`) {
-		case nftTable:
-			current = true
-		case legacyNftTable:
-			legacy = true
+		name := strings.Trim(fields[2], `"`)
+		if isManagedNftTable(name) {
+			found = append(found, name)
 		}
 	}
-	if current && legacy {
+	if len(found) > 1 {
 		return "", false, fmt.Errorf("同时发现新旧节点 nftables 表，请先确认要保留的安装")
 	}
 	table := n.state.Table
-	if legacy {
-		table = legacyNftTable
-	} else if current || table == "" {
+	if len(found) == 1 {
+		table = found[0]
+	} else if table == "" {
 		table = nftTable
 	}
-	return table, current || legacy, nil
+	return table, len(found) > 0, nil
 }
 
-// removeTables deletes both the current and the legacy table, whichever exist.
+// removeTables deletes both the current and any legacy tables, whichever exist.
 func (n *nftCounters) removeTables() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -380,7 +394,7 @@ func (n *nftCounters) removeTables() error {
 			continue
 		}
 		name := strings.Trim(fields[2], `"`)
-		if name != nftTable && name != legacyNftTable {
+		if !isManagedNftTable(name) {
 			continue
 		}
 		if _, err := nftRunner(ctx, "", "delete", "table", "inet", name); err != nil {
@@ -412,8 +426,8 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 	rules := expandPorts(ports)
 	users = sortedUsers(users)
 	script := nftScript(rules, expandGuards(ports), expandHops(ports), users)
-	if table == legacyNftTable {
-		script = strings.ReplaceAll(script, nftTable, legacyNftTable)
+	if isLegacyNftTable(table) {
+		script = strings.ReplaceAll(script, nftTable, table)
 	}
 	sig := hashString(script)
 
@@ -421,16 +435,52 @@ func (n *nftCounters) sync(ports []Port, users []int64) error {
 		n.lastErr = ""
 		return nil
 	}
+	// Preserve accumulated counter values from the live table before replacing
+	// it so config or user-list changes never drop unpolled traffic.
+	epoch := newEpoch()
+	var offsets map[string]int64
+	if exists && n.state.Epoch != "" {
+		if live, readErr := n.readTableValues(ctx, table); readErr == nil {
+			epoch = n.state.Epoch
+			offsets = mergeNftOffsets(n.state.Offsets, live)
+		}
+	}
 	if _, err := nftRunner(ctx, script, "-f", "-"); err != nil {
 		n.lastErr = err.Error()
 		return err
 	}
 	n.lastErr = ""
-	n.state = nftState{Table: table, Signature: sig, Epoch: newEpoch()}
+	n.state = nftState{Table: table, Signature: sig, Epoch: epoch, Offsets: offsets}
 	if b, err := json.Marshal(n.state); err == nil {
 		_ = writeFileAtomic(n.statePath, b, 0o600)
 	}
 	return nil
+}
+
+func mergeNftOffsets(prev map[string]int64, live []nftCounterValue) map[string]int64 {
+	out := make(map[string]int64, len(prev)+len(live))
+	for name, val := range prev {
+		if val > 0 {
+			out[name] = val
+		}
+	}
+	for _, c := range live {
+		if c.bytes > 0 {
+			out[c.name] += c.bytes
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (n *nftCounters) readTableValues(ctx context.Context, table string) ([]nftCounterValue, error) {
+	out, err := nftRunner(ctx, "", "list", "counters", "table", "inet", table)
+	if err != nil {
+		return nil, err
+	}
+	return parseCounterListing(out)
 }
 
 // read returns the current counters together with the epoch they belong to.
@@ -442,12 +492,62 @@ func (n *nftCounters) read() ([]Counter, []UserCounter, string, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	out, err := nftRunner(ctx, "", "list", "counters", "table", "inet", n.state.Table)
+	values, err := n.readTableValues(ctx, n.state.Table)
 	if err != nil {
+		// When the table was intentionally removed (no active ports/users),
+		// still emit carried offsets so final traffic is not lost.
+		if len(n.state.Offsets) > 0 && n.state.Epoch != "" {
+			if _, exists, rerr := n.resolveTable(ctx); rerr == nil && !exists {
+				counters, users := parseCounterValues(offsetsToValues(n.state.Table, n.state.Offsets))
+				return counters, users, n.state.Epoch, nil
+			}
+		}
 		return nil, nil, "", err
 	}
-	counters, users, err := parseCounters(out)
-	return counters, users, n.state.Epoch, err
+	combined := combineTableAndOffsets(n.state.Table, values, n.state.Offsets)
+	counters, users := parseCounterValues(combined)
+	return counters, users, n.state.Epoch, nil
+}
+
+func offsetsToValues(table string, offsets map[string]int64) []nftCounterValue {
+	names := make([]string, 0, len(offsets))
+	for name, val := range offsets {
+		if val > 0 {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	out := make([]nftCounterValue, 0, len(names))
+	for _, name := range names {
+		out = append(out, nftCounterValue{table: table, name: name, bytes: offsets[name]})
+	}
+	return out
+}
+
+func combineTableAndOffsets(table string, live []nftCounterValue, offsets map[string]int64) []nftCounterValue {
+	if len(offsets) == 0 {
+		return live
+	}
+	seen := make(map[string]bool, len(live))
+	out := make([]nftCounterValue, 0, len(live)+len(offsets))
+	for _, c := range live {
+		if isManagedNftTable(c.table) {
+			seen[c.name] = true
+			c.bytes += offsets[c.name]
+		}
+		out = append(out, c)
+	}
+	var extra []string
+	for name, val := range offsets {
+		if val > 0 && !seen[name] {
+			extra = append(extra, name)
+		}
+	}
+	sort.Strings(extra)
+	for _, name := range extra {
+		out = append(out, nftCounterValue{table: table, name: name, bytes: offsets[name]})
+	}
+	return out
 }
 
 type nftCounterValue struct {
@@ -457,7 +557,7 @@ type nftCounterValue struct {
 
 // parseCounterListing reads `nft list counters` text:
 //
-//	table inet flyx_kernel {
+//	table inet flux_kernel {
 //		counter in_7_tcp {
 //			packets 3 bytes 1200
 //		}
@@ -498,10 +598,15 @@ func parseCounters(raw []byte) ([]Counter, []UserCounter, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	counters, users := parseCounterValues(values)
+	return counters, users, nil
+}
+
+func parseCounterValues(values []nftCounterValue) ([]Counter, []UserCounter) {
 	var counters []Counter
 	var users []UserCounter
 	for _, c := range values {
-		if c.table != nftTable && c.table != legacyNftTable {
+		if !isManagedNftTable(c.table) {
 			continue
 		}
 		parts := strings.Split(c.name, "_")
@@ -520,7 +625,7 @@ func parseCounters(raw []byte) ([]Counter, []UserCounter, error) {
 		}
 		counters = append(counters, Counter{InboundID: id, Proto: parts[2], Dir: parts[0], Bytes: c.bytes})
 	}
-	return counters, users, nil
+	return counters, users
 }
 
 func newEpoch() string {

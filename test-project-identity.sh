@@ -13,17 +13,23 @@ test_agent_installation_identity() (
   AGENT_ETC_ROOT="$root"
   SERVER_ADDR="panel.example.com:6365"
   resolve_agent_installation
+  [[ "$INSTALL_DIR" == "$root/flux-agent" && "$AGENT_NAME" == flux-agent ]]
+  # Existing flyx-agent installations (3.4-3.6) keep their path and service.
+  mkdir -p "$root/flyx-agent"
+  touch "$root/flyx-agent/config.json" "$root/flyx-agent/flyx-agent"
+  resolve_agent_installation
   [[ "$INSTALL_DIR" == "$root/flyx-agent" && "$AGENT_NAME" == flyx-agent ]]
-  # flux-panel / FLVX use the same directory; another panel's agent is left alone.
+  rm -rf "$root/flyx-agent"
+  # flux-panel / FLVX use /etc/flux_agent; another panel's agent is left alone.
   mkdir -p "$root/flux_agent"
   printf '{\n  "addr": "other.example.com:6365",\n  "secret": "theirs"\n}\n' > "$root/flux_agent/config.json"
   touch "$root/flux_agent/flux_agent"
   resolve_agent_installation
-  [[ "$INSTALL_DIR" == "$root/flyx-agent" && "$AGENT_NAME" == flyx-agent ]]
+  [[ "$INSTALL_DIR" == "$root/flux-agent" && "$AGENT_NAME" == flux-agent ]]
   SERVER_ADDR=
   resolve_agent_installation
-  [[ "$INSTALL_DIR" == "$root/flyx-agent" ]]
-  # A pre-3.4.0 FLYX agent of this panel keeps its path and config.
+  [[ "$INSTALL_DIR" == "$root/flux-agent" ]]
+  # A pre-3.4.0 agent of this panel keeps its path and config.
   SERVER_ADDR="panel.example.com:6365"
   printf '{"addr":"panel.example.com:6365","secret":"preserved"}\n' > "$root/flux_agent/config.json"
   resolve_agent_installation
@@ -31,16 +37,16 @@ test_agent_installation_identity() (
   [[ "$AGENT_SYSTEMD_SERVICE_FILE" == "$root/systemd/system/flux_agent.service" ]]
   [[ $(cat "$root/flux_agent/config.json") == '{"addr":"panel.example.com:6365","secret":"preserved"}' ]]
   # Once the new installation exists it is the one managed.
-  mkdir -p "$root/flyx-agent"
-  touch "$root/flyx-agent/config.json"
+  mkdir -p "$root/flux-agent"
+  touch "$root/flux-agent/config.json"
   resolve_agent_installation
-  [[ "$INSTALL_DIR" == "$root/flyx-agent" ]]
+  [[ "$INSTALL_DIR" == "$root/flux-agent" ]]
   # The menu cannot compare addresses and asks before using the old path.
-  rm -rf "$root/flyx-agent"
+  rm -rf "$root/flux-agent"
   SERVER_ADDR=
   resolve_agent_installation
   confirm_legacy_agent <<<'n' >/dev/null
-  [[ "$INSTALL_DIR" == "$root/flyx-agent" ]]
+  [[ "$INSTALL_DIR" == "$root/flux-agent" ]]
   confirm_legacy_agent <<<'y' >/dev/null
   [[ "$INSTALL_DIR" == "$root/flux_agent" && "$AGENT_NAME" == flux_agent ]]
   # The original flux-panel gost service is not removed any more.
@@ -50,9 +56,9 @@ test_agent_installation_identity() (
 test_version_precedence() (
   for script in install.sh panel_install.sh; do
     load_script "$script"
-    VERSION= FLYX_VERSION=new FLUX_VERSION=old
+    VERSION= FLUX_VERSION=new FLYX_VERSION=old
     [[ $(resolve_version) == new ]]
-    unset FLYX_VERSION
+    unset FLUX_VERSION
     [[ $(resolve_version) == old ]]
   done
 )
@@ -64,10 +70,10 @@ test_panel_new_install_defaults() (
   cd "$root"
   printf 'JWT_SECRET=keep\n' > .env
   write_new_panel_identity
-  [[ $(get_env_var PANEL_BACKEND_CONTAINER) == flyx-panel-backend ]]
-  [[ $(get_env_var FLYX_SQLITE_VOLUME) == flyx-sqlite-data ]]
-  [[ $(get_env_var FLYX_POSTGRES_VOLUME) == flyx-postgres-data ]]
-  [[ $(get_env_var FLYX_NETWORK) == flyx-network ]]
+  [[ $(get_env_var PANEL_BACKEND_CONTAINER) == flux-panel-backend ]]
+  [[ $(get_env_var FLUX_SQLITE_VOLUME) == flux-sqlite-data ]]
+  [[ $(get_env_var FLUX_POSTGRES_VOLUME) == flux-postgres-data ]]
+  [[ $(get_env_var FLUX_NETWORK) == flux-network ]]
   [[ $(get_env_var JWT_SECRET) == keep ]]
 )
 
@@ -83,25 +89,29 @@ test_panel_legacy_detection() (
     if [[ "$3" == '{{.Config.Image}}' ]]; then printf '%s\n' "$fake_image"; else printf '/flux-panel-backend\n'; fi
   }
   [[ $(detect_panel_backend) == flux-panel-backend ]]
-  # flux-panel / FLVX run their own flux-panel-backend; it is not this panel.
-  fake_image=ghcr.io/sagit-chu/flux-panel-backend:2.0
+  # Existing flyx-panel-backend container (3.4-3.6) is preserved.
+  docker() {
+    [[ "$4" == flyx-panel-backend ]] || return 1
+    printf '/flyx-panel-backend\n'
+  }
   [[ $(detect_panel_backend) == flyx-panel-backend ]]
-  # Explicit configuration selects the requested installation when both exist.
-  fake_image=ghcr.io/kure29/flux-panel-backend:3.3.0
+  # flux-panel / FLVX run their own flux-panel-backend; it is not treated as ours,
+  # and when both flyx-panel-backend and our flux-panel-backend exist it fails.
+  fake_image=ghcr.io/kure29/flux-panel-backend:3.7.0
   docker() {
     if [[ "$3" == '{{.Config.Image}}' ]]; then printf '%s\n' "$fake_image"; else printf '/%s\n' "$4"; fi
   }
-  if detect_panel_backend >/dev/null; then exit 1; fi
+  if detect_panel_backend >/dev/null 2>&1; then exit 1; fi
   printf 'PANEL_BACKEND_CONTAINER=custom-backend\n' > .env
   [[ $(detect_panel_backend) == custom-backend ]]
   # Another panel's deployment files are never taken for ours.
   printf 'services:\n  backend:\n    image: ghcr.io/sagit-chu/flux-panel-backend:2.0\n' > docker-compose.yml
-  ! is_flyx_deploy_dir .
+  ! is_flux_deploy_dir .
   # Installing a historical Compose release keeps its original resource names.
   printf 'services:\n  backend:\n    image: ghcr.io/kure29/flux-panel-backend:3.3.0\n' > docker-compose.yml
-  is_flyx_deploy_dir .
+  is_flux_deploy_dir .
   write_new_panel_identity
-  [[ $(get_env_var FLYX_SQLITE_VOLUME) == sqlite_data ]]
+  [[ $(get_env_var FLUX_SQLITE_VOLUME) == sqlite_data ]]
   [[ $(get_env_var PANEL_BACKEND_CONTAINER) == flux-panel-backend ]]
 )
 
@@ -136,7 +146,7 @@ import json, os, pathlib, subprocess, sys, tempfile
 root=pathlib.Path(sys.argv[1])
 env={k:v for k,v in os.environ.items() if not k.startswith(('FLYX_','FLUX_','FLVX_','PANEL_','POSTGRES_','COMPOSE_'))}
 base='JWT_SECRET=test-only\nBACKEND_PORT=6365\nFRONTEND_PORT=6366\nFLUX_VERSION=old\nFLVX_WEBAUTHN_ORIGIN=https://panel.example.com\n'
-with tempfile.TemporaryDirectory(prefix='flyx-compose-') as tmp:
+with tempfile.TemporaryDirectory(prefix='flux-compose-') as tmp:
  tmp=pathlib.Path(tmp)
  def render(path, values):
   e=tmp/'fixture.env';e.write_text(values)
@@ -150,13 +160,13 @@ with tempfile.TemporaryDirectory(prefix='flyx-compose-') as tmp:
   assert [x['name'] for x in after['networks'].values()]==['gost-network']
   # Compose labels the network with this key; renaming it breaks upgrades.
   assert list(after['networks'])==['gost-network']
-  assert after['services']['backend']['environment']['FLYX_WEBAUTHN_ORIGIN']=='https://panel.example.com'
-  new=render(root/name,base+'FLYX_VERSION=new\nFLYX_WEBAUTHN_ORIGIN=\nPANEL_BACKEND_CONTAINER=flyx-panel-backend\nPANEL_FRONTEND_CONTAINER=flyx-panel-frontend\nPANEL_POSTGRES_CONTAINER=flyx-panel-postgres\nFLYX_SQLITE_VOLUME=flyx-sqlite-data\nFLYX_POSTGRES_VOLUME=flyx-postgres-data\nFLYX_NETWORK=flyx-network\n')
-  assert new['services']['backend']['container_name']=='flyx-panel-backend'
-  assert new['services']['backend']['image']=='ghcr.io/kure29/flyx-panel-backend:new'
-  assert new['volumes']['sqlite_data']['name']=='flyx-sqlite-data'
-  assert new['volumes']['postgres_data']['name']=='flyx-postgres-data'
-  assert new['services']['backend']['environment']['FLYX_WEBAUTHN_ORIGIN']==''
+  assert after['services']['backend']['environment']['FLUX_WEBAUTHN_ORIGIN']=='https://panel.example.com'
+  new=render(root/name,base+'FLUX_VERSION=new\nFLUX_WEBAUTHN_ORIGIN=\nPANEL_BACKEND_CONTAINER=flux-panel-backend\nPANEL_FRONTEND_CONTAINER=flux-panel-frontend\nPANEL_POSTGRES_CONTAINER=flux-panel-postgres\nFLUX_SQLITE_VOLUME=flux-sqlite-data\nFLUX_POSTGRES_VOLUME=flux-postgres-data\nFLUX_NETWORK=flux-network\n')
+  assert new['services']['backend']['container_name']=='flux-panel-backend'
+  assert new['services']['backend']['image']=='ghcr.io/kure29/flux-panel-backend:new'
+  assert new['volumes']['sqlite_data']['name']=='flux-sqlite-data'
+  assert new['volumes']['postgres_data']['name']=='flux-postgres-data'
+  assert new['services']['backend']['environment']['FLUX_WEBAUTHN_ORIGIN']==''
 print('IPv4/IPv6 Compose: old resources preserved; new namespace and env precedence passed')
 PYCOMPOSE
 fi
