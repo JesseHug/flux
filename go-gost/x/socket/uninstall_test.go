@@ -124,7 +124,7 @@ func TestContainerUninstallKeepsOnlyMarkerAndBinary(t *testing.T) {
 	for _, e := range entries {
 		left = append(left, e.Name())
 	}
-	if strings.Join(left, ",") != ".image_version,.uninstalled,flyx-agent" {
+	if strings.Join(left, ",") != ".image_version,.uninstalled,flux-agent" {
 		t.Fatalf("left in data dir: %v", left)
 	}
 	if !AgentUninstalled() {
