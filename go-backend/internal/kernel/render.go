@@ -66,6 +66,12 @@ type RenderOptions struct {
 	// KernelStats enables Xray's built-in loopback StatsService for per-user
 	// accounting instead of socket marks / nftables.
 	KernelStats bool
+	// SingboxNTP enables sing-box's built-in user-space NTP module so
+	// unprivileged containers with drifted clocks can run SS-2022 safely.
+	SingboxNTP bool
+	// SingboxNoCacheFile omits experimental.cache_file even when route rule_set
+	// definitions are rendered.
+	SingboxNoCacheFile bool
 }
 
 // Render produces the kernel configuration for the given enabled inbounds.

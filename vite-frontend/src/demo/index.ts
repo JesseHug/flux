@@ -64,7 +64,7 @@ export function switchDemoRole(role: DemoRole) {
  * last path segment tells them apart ("latest-results" is a read).
  */
 const WRITE_WORDS = new Set(
-  "create save update delete remove assign reset toggle import install control regenerate pause resume redeploy batch force run refresh split rollback test dismiss restore export reconcile clear login register finish begin verify".split(
+  "create save update delete remove assign reset toggle import install control regenerate pause resume redeploy batch force run refresh split rollback test dismiss restore export reconcile clear login register finish begin verify revoke prune".split(
     " ",
   ),
 );
@@ -187,6 +187,9 @@ async function answer(config: InternalAxiosRequestConfig) {
       fixtures.recordedAt,
       delta,
     );
+  }
+  if (bare === "api-token/list") {
+    return { code: 0, msg: "操作成功", data: [], ts: Date.now() };
   }
   if (entries?.length && !write) {
     const hit = entries.find((e) => e.key === key) ?? entries[0];

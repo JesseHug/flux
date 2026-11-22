@@ -141,7 +141,7 @@ func TestSubscriptionTemplateContract(t *testing.T) {
 	}
 
 	// Without the subscription using it, the template can go.
-	if res := post("/api/v1/subscription/save", `{"id":`+subID+`,"name":"我的","groupIds":[`+allGroup+`]}`); res.Code != 0 {
+	if res := post("/api/v1/subscription/save", `{"id":`+subID+`,"name":"我的","groupIds":[`+allGroup+`],"options":{}}`); res.Code != 0 {
 		t.Fatal(res.Msg)
 	}
 	if res := post("/api/v1/subscription/template/delete", `{"id":`+clashID+`}`); res.Code != 0 {

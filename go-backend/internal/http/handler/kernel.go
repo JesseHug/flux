@@ -15,10 +15,16 @@ import (
 	"sync"
 	"time"
 
+	"go-backend/internal/http/middleware"
 	"go-backend/internal/http/response"
 	"go-backend/internal/kernel"
 	"go-backend/internal/store/model"
 	"go-backend/internal/store/repo"
+)
+
+const (
+	singboxNTPModeConfigKey   = "singbox_ntp_mode"
+	singboxCacheFileConfigKey = "singbox_cache_file"
 )
 
 const (
@@ -142,30 +148,61 @@ type kernelSecurityView struct {
 	ACMEDNSSet    bool   `json:"acmeDnsSet,omitempty"`
 }
 
+// inboundSecurityRequest accepts list output's acmeDnsSet flag when clients
+// round-trip an item from /inbound/list back into /inbound/update.
+type inboundSecurityRequest struct {
+	kernel.Security
+	ACMEDNSSet bool `json:"acmeDnsSet,omitempty"`
+}
+
 type inboundRequest struct {
-	OutboundIPStrategy   *string            `json:"outboundIpStrategy"`
-	ID                   int64              `json:"id"`
-	NodeID               int64              `json:"nodeId"`
-	KernelType           string             `json:"kernelType"`
-	Name                 string             `json:"name"`
-	Protocol             string             `json:"protocol"`
-	Listen               string             `json:"listen"`
-	Port                 int                `json:"port"`
-	Settings             kernel.Settings    `json:"settings"`
-	Transport            kernel.Transport   `json:"transport"`
-	Security             kernel.Security    `json:"security"`
-	Extra                string             `json:"extra"`
-	ShareAddressMode     *string            `json:"shareAddressMode"`
-	ShareHost            string             `json:"shareHost"`
-	Remark               string             `json:"remark"`
-	RelayOnly            bool               `json:"relayOnly"`
-	AcceptProxyProtocol  bool               `json:"acceptProxyProtocol"`
-	RelayWhitelist       bool               `json:"relayWhitelist"`
-	WhitelistExtra       string             `json:"whitelistExtra"`
-	OutboundID           int64              `json:"outboundId"`
-	DialerProxyInboundID int64              `json:"dialerProxyInboundId"`
-	SplitRules           []kernel.SplitRule `json:"splitRules"`
-	Enabled              *bool              `json:"enabled"`
+	OutboundIPStrategy   *string                 `json:"outboundIpStrategy"`
+	ID                   int64                   `json:"id"`
+	NodeID               int64                   `json:"nodeId"`
+	KernelType           string                  `json:"kernelType"`
+	Name                 *string                 `json:"name"`
+	Protocol             *string                 `json:"protocol"`
+	Listen               *string                 `json:"listen"`
+	Port                 *int                    `json:"port"`
+	Settings             *kernel.Settings        `json:"settings"`
+	Transport            *kernel.Transport       `json:"transport"`
+	Security             *inboundSecurityRequest `json:"security"`
+	Extra                *string                 `json:"extra"`
+	ShareAddressMode     *string                 `json:"shareAddressMode"`
+	ShareHost            *string                 `json:"shareHost"`
+	Remark               *string                 `json:"remark"`
+	RelayOnly            *bool                   `json:"relayOnly"`
+	AcceptProxyProtocol  *bool                   `json:"acceptProxyProtocol"`
+	RelayWhitelist       *bool                   `json:"relayWhitelist"`
+	WhitelistExtra       *string                 `json:"whitelistExtra"`
+	OutboundID           *int64                  `json:"outboundId"`
+	DialerProxyInboundID *int64                  `json:"dialerProxyInboundId"`
+	SplitRules           *[]kernel.SplitRule     `json:"splitRules"`
+	Enabled              *bool                   `json:"enabled"`
+	Tags                 *[]string               `json:"tags,omitempty"`
+	DryRun               bool                    `json:"dryRun,omitempty"`
+
+	// Read-only /inbound/list view fields ignored on save so full items round-trip safely.
+	KernelID               int64           `json:"kernelId,omitempty"`
+	KernelStatus           string          `json:"kernelStatus,omitempty"`
+	External               bool            `json:"external,omitempty"`
+	ImportedSummary        string          `json:"importedSummary,omitempty"`
+	ImportedParams         [][2]string     `json:"importedParams,omitempty"`
+	NodeName               string          `json:"nodeName,omitempty"`
+	NodeServerIP           string          `json:"nodeServerIp,omitempty"`
+	Network                string          `json:"network,omitempty"`
+	ShareAddress           string          `json:"shareAddress,omitempty"`
+	RelayCount             int             `json:"relayCount,omitempty"`
+	UploadBytes            int64           `json:"uploadBytes,omitempty"`
+	DownloadBytes          int64           `json:"downloadBytes,omitempty"`
+	CreatedTime            int64           `json:"createdTime,omitempty"`
+	UpdatedTime            int64           `json:"updatedTime,omitempty"`
+	Probe                  json.RawMessage `json:"probe,omitempty"`
+	SourceID               int64           `json:"sourceId,omitempty"`
+	SourceName             string          `json:"sourceName,omitempty"`
+	OutboundName           string          `json:"outboundName,omitempty"`
+	OutboundMissing        bool            `json:"outboundMissing,omitempty"`
+	DialerProxyInboundName string          `json:"dialerProxyInboundName,omitempty"`
 }
 
 // ---- conversion ----
@@ -458,6 +495,10 @@ func (h *Handler) kernelControl(w http.ResponseWriter, r *http.Request) {
 		}
 		h.refreshNodeKernelStatus(k.NodeID)
 	case "remove":
+		if middleware.IsAPITokenRequest(r) {
+			response.WriteJSON(w, response.Err(403, "该高危操作禁止使用 API 令牌，请登录网页后台执行"))
+			return
+		}
 		unlock := lockKernelApply(k.ID)
 		_, err := h.sendNodeCommandWithTimeout(k.NodeID, "KernelControl", map[string]interface{}{
 			"type": k.KernelType, "action": "remove",
@@ -467,7 +508,10 @@ func (h *Handler) kernelControl(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSON(w, response.ErrDefault("服务器卸载失败: "+err.Error()+"（可强制删除面板记录）"))
 			return
 		}
+		var deletedNames []string
+		var deletedIDs []int64
 		if rows, lerr := h.repo.ListNodeInboundsByKernel(k.ID); lerr == nil {
+			deletedNames, deletedIDs = h.collectInboundDeletedRefs(rows...)
 			for _, row := range rows {
 				h.removeInboundRelays(row.ID)
 			}
@@ -478,6 +522,7 @@ func (h *Handler) kernelControl(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSON(w, response.Err(-2, err.Error()))
 			return
 		}
+		h.pruneSubscriptionDeletedRefs(deletedNames, deletedIDs)
 	default:
 		response.WriteJSON(w, response.ErrDefault("未知操作"))
 		return
@@ -650,16 +695,6 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" || len([]rune(req.Name)) > 100 {
-		response.WriteJSON(w, response.ErrDefault("名称不能为空且不超过 100 字"))
-		return
-	}
-	req.ShareHost = strings.TrimSpace(req.ShareHost)
-	if len(req.ShareHost) > 255 {
-		response.WriteJSON(w, response.ErrDefault("分享地址过长"))
-		return
-	}
 
 	now := time.Now().UnixMilli()
 	var row model.NodeInbound
@@ -672,23 +707,13 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		}
 		row = *existing
 		if isExternalInbound(&row) {
-			response.WriteJSON(w, response.ErrDefault("导入的节点请在“编辑”里修改地址和密码"))
+			response.WriteJSON(w, response.ErrDefault("导入的节点请在“编辑”里修改地址和密码，或使用 /api/v1/inbound/patch"))
 			return
 		}
 		k, err = h.repo.GetNodeKernel(row.KernelID)
 		if err != nil || k == nil {
 			response.WriteJSON(w, response.ErrDefault("内核不存在"))
 			return
-		}
-		// Keep secrets the client did not resend (the list hides PEM).
-		old, _ := inboundFromModel(row)
-		if req.Security.Type == old.Security.Type && req.Security.CertMode == old.Security.CertMode &&
-			req.Security.CertPEM == "" && req.Security.KeyPEM == "" {
-			req.Security.CertPEM, req.Security.KeyPEM = old.Security.CertPEM, old.Security.KeyPEM
-		}
-		if req.Security.CertMode == kernel.CertModeACME && req.Security.ACMEDNS == old.Security.ACMEDNS &&
-			req.Security.ACMEDNSKey == "" && req.Security.ACMEDNSSecret == "" {
-			req.Security.ACMEDNSKey, req.Security.ACMEDNSSecret = old.Security.ACMEDNSKey, old.Security.ACMEDNSSecret
 		}
 	} else {
 		if _, err := h.kernelNodeEligible(req.NodeID); err != nil {
@@ -707,49 +732,311 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		}
 		row = model.NodeInbound{KernelID: k.ID, NodeID: k.NodeID, CreatedTime: now, Enabled: 1}
 	}
+	h.saveManagedInbound(w, row, k, req, update)
+}
 
-	mode := inboundShareMode(&row)
+func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		response.WriteJSON(w, response.ErrDefault("请求失败"))
+		return
+	}
+	var req struct {
+		ID                   int64               `json:"id"`
+		Name                 *string             `json:"name"`
+		Host                 *string             `json:"host"`
+		Port                 *int                `json:"port"`
+		Remark               *string             `json:"remark"`
+		OutboundID           *int64              `json:"outboundId"`
+		DialerProxyInboundID *int64              `json:"dialerProxyInboundId"`
+		OutboundIPStrategy   *string             `json:"outboundIpStrategy"`
+		ShareAddressMode     *string             `json:"shareAddressMode"`
+		ShareHost            *string             `json:"shareHost"`
+		RelayOnly            *bool               `json:"relayOnly"`
+		AcceptProxyProtocol  *bool               `json:"acceptProxyProtocol"`
+		RelayWhitelist       *bool               `json:"relayWhitelist"`
+		WhitelistExtra       *string             `json:"whitelistExtra"`
+		SplitRules           *[]kernel.SplitRule `json:"splitRules"`
+		Enabled              *bool               `json:"enabled"`
+		Tags                 *[]string           `json:"tags"`
+		DryRun               bool                `json:"dryRun"`
+	}
+	if err := decodeJSON(r.Body, &req); err != nil || req.ID <= 0 {
+		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
+		return
+	}
+	existing, err := h.repo.GetNodeInbound(req.ID)
+	if err != nil || existing == nil {
+		response.WriteJSON(w, response.ErrDefault("节点服务不存在"))
+		return
+	}
+	if isExternalInbound(existing) {
+		if req.OutboundID != nil || req.SplitRules != nil || req.OutboundIPStrategy != nil ||
+			req.ShareAddressMode != nil || req.ShareHost != nil || req.AcceptProxyProtocol != nil ||
+			req.RelayWhitelist != nil || req.WhitelistExtra != nil {
+			response.WriteJSON(w, response.ErrDefault("外部导入节点仅支持修改 name/host/port/remark/relayOnly/dialerProxyInboundId/enabled/tags"))
+			return
+		}
+		h.patchExternalInbound(w, *existing, req.Name, req.Host, req.Port, req.Remark, req.RelayOnly, req.DialerProxyInboundID, req.Enabled, req.Tags, req.DryRun)
+		return
+	}
+	if req.Host != nil {
+		response.WriteJSON(w, response.ErrDefault("托管入站请使用 shareAddressMode / shareHost 修改分享地址"))
+		return
+	}
+	k, err := h.repo.GetNodeKernel(existing.KernelID)
+	if err != nil || k == nil {
+		response.WriteJSON(w, response.ErrDefault("内核不存在"))
+		return
+	}
+	full := inboundRequest{
+		ID:                   existing.ID,
+		Name:                 req.Name,
+		Port:                 req.Port,
+		Remark:               req.Remark,
+		OutboundID:           req.OutboundID,
+		DialerProxyInboundID: req.DialerProxyInboundID,
+		OutboundIPStrategy:   req.OutboundIPStrategy,
+		ShareAddressMode:     req.ShareAddressMode,
+		ShareHost:            req.ShareHost,
+		RelayOnly:            req.RelayOnly,
+		AcceptProxyProtocol:  req.AcceptProxyProtocol,
+		RelayWhitelist:       req.RelayWhitelist,
+		WhitelistExtra:       req.WhitelistExtra,
+		SplitRules:           req.SplitRules,
+		Enabled:              req.Enabled,
+		Tags:                 req.Tags,
+		DryRun:               req.DryRun,
+	}
+	h.saveManagedInbound(w, *existing, k, full, true)
+}
+
+func (h *Handler) patchExternalInbound(w http.ResponseWriter, row model.NodeInbound, namePtr, hostPtr *string, portPtr *int, remarkPtr *string, relayOnlyPtr *bool, dialerPtr *int64, enabledPtr *bool, tagsPtr *[]string, dryRun bool) {
+	oldName := row.Name
+	oldHost, oldPort := row.Listen, row.Port
+
+	if namePtr != nil {
+		name := strings.TrimSpace(*namePtr)
+		if name == "" || len([]rune(name)) > 100 {
+			response.WriteJSON(w, response.ErrDefault("名称不能为空且不超过 100 字"))
+			return
+		}
+		if row.SourceID != 0 && row.ImportedName == "" && name != row.Name {
+			row.ImportedName = row.Name
+		}
+		row.Name = name
+	}
+	host := row.Listen
+	if hostPtr != nil {
+		host = strings.Trim(strings.TrimSpace(*hostPtr), "[]")
+		if err := kernel.ValidateImportHost(host); err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		row.ShareHost = host
+	}
+	port := row.Port
+	if portPtr != nil {
+		if *portPtr < 1 || *portPtr > 65535 {
+			response.WriteJSON(w, response.ErrDefault("端口不正确"))
+			return
+		}
+		port = *portPtr
+	}
+	if host != oldHost || port != oldPort {
+		if proxy := importedProxy(&row); proxy != nil {
+			proxy["server"], proxy["port"] = host, port
+			raw, err := json.Marshal(proxy)
+			if err != nil {
+				response.WriteJSON(w, response.Err(-2, err.Error()))
+				return
+			}
+			row.Extra = string(raw)
+			row.Protocol = kernel.ProxyProtocol(proxy)
+			row.Listen, row.Port = host, port
+		} else {
+			in, err := inboundFromModel(row)
+			if err != nil {
+				response.WriteJSON(w, response.ErrDefault(err.Error()))
+				return
+			}
+			in.Listen, in.Port = host, port
+			if err := applyInboundToModel(in, &row); err != nil {
+				response.WriteJSON(w, response.Err(-2, err.Error()))
+				return
+			}
+		}
+	}
+	if remarkPtr != nil {
+		row.Remark = strings.TrimSpace(*remarkPtr)
+	}
+	if relayOnlyPtr != nil {
+		row.RelayOnly = boolToInt(*relayOnlyPtr)
+	}
+	if dialerPtr != nil {
+		row.DialerProxyInboundID = *dialerPtr
+	}
+	if enabledPtr != nil {
+		row.Enabled = boolToInt(*enabledPtr)
+	}
+	if tagsPtr != nil {
+		tags, err := normalizeTags(*tagsPtr)
+		if err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		row.Tags = tags
+	}
+	if dryRun {
+		response.WriteJSON(w, response.OK(map[string]interface{}{
+			"dryRun":   true,
+			"id":       row.ID,
+			"external": true,
+			"changed":  row.Name != oldName || row.Listen != oldHost || row.Port != oldPort,
+			"after": map[string]interface{}{
+				"id": row.ID, "name": row.Name, "host": row.Listen, "port": row.Port,
+				"remark": row.Remark, "relayOnly": row.RelayOnly == 1,
+				"dialerProxyInboundId": row.DialerProxyInboundID, "enabled": row.Enabled == 1,
+			},
+		}))
+		return
+	}
+	row.UpdatedTime = time.Now().UnixMilli()
+	if err := h.repo.SaveNodeInbound(&row); err != nil {
+		response.WriteJSON(w, response.Err(-2, err.Error()))
+		return
+	}
+	if oldName != row.Name {
+		h.syncSubscriptionInboundRename(oldName, row.Name, false, false)
+	}
+	var warnings []string
+	if row.Listen != oldHost || row.Port != oldPort {
+		warnings = append(warnings, h.retargetRelays(&row)...)
+	}
+	warnings = append(warnings, h.applyChainReferrers(row.ID)...)
+	if len(warnings) > 0 {
+		response.WriteJSON(w, response.R{Code: 0, Msg: "已保存，但" + strings.Join(warnings, "；"), TS: row.UpdatedTime, Data: map[string]interface{}{"id": row.ID}})
+		return
+	}
+	response.WriteJSON(w, response.OK(map[string]interface{}{"id": row.ID}))
+}
+
+func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInbound, k *model.NodeKernel, req inboundRequest, update bool) {
+	now := time.Now().UnixMilli()
+	oldName := row.Name
+	oldMode := inboundShareMode(&row)
+	var old kernel.Inbound
+	if update {
+		old, _ = inboundFromModel(row)
+	}
+
+	name := row.Name
+	if req.Name != nil {
+		name = strings.TrimSpace(*req.Name)
+	}
+	if name == "" || len([]rune(name)) > 100 {
+		response.WriteJSON(w, response.ErrDefault("名称不能为空且不超过 100 字"))
+		return
+	}
+
+	shareHostInput := row.ShareHost
+	if req.ShareHost != nil {
+		shareHostInput = strings.TrimSpace(*req.ShareHost)
+	}
+	if len(shareHostInput) > 255 {
+		response.WriteJSON(w, response.ErrDefault("分享地址过长"))
+		return
+	}
+
+	mode := oldMode
 	if req.ShareAddressMode != nil {
 		mode = strings.TrimSpace(*req.ShareAddressMode)
-	}
-	if req.ShareAddressMode == nil {
-		if req.ShareHost != "" {
+	} else if req.ShareHost != nil {
+		if shareHostInput != "" {
 			mode = "custom"
 		} else if mode == "custom" {
 			mode = "auto"
 		}
 	}
+
 	node, err := h.repo.GetNodeByID(row.NodeID)
 	if err != nil || node == nil {
 		response.WriteJSON(w, response.ErrDefault("服务器不存在"))
 		return
 	}
-	if err := validateShareAddress(mode, req.ShareHost, node); err != nil {
+	if err := validateShareAddress(mode, shareHostInput, node); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	if req.RelayWhitelist && strings.TrimSpace(node.NftError) != "" {
+
+	relayWhitelist := row.RelayWhitelist == 1
+	if req.RelayWhitelist != nil {
+		relayWhitelist = *req.RelayWhitelist
+	}
+	if relayWhitelist && strings.TrimSpace(node.NftError) != "" {
 		// The agent stops a whitelisted kernel it cannot protect.
 		response.WriteJSON(w, response.ErrDefault("该服务器无法使用入站白名单："+node.NftError))
 		return
 	}
 	row.ShareAddressMode = mode
 	if mode != "custom" {
-		req.ShareHost = ""
+		shareHostInput = ""
+	}
+
+	protocol := old.Protocol
+	if req.Protocol != nil && strings.TrimSpace(*req.Protocol) != "" {
+		protocol = *req.Protocol
+	}
+	listen := old.Listen
+	if req.Listen != nil && strings.TrimSpace(*req.Listen) != "" {
+		listen = *req.Listen
+	}
+	port := old.Port
+	if req.Port != nil && (*req.Port != 0 || !update) {
+		port = *req.Port
+	}
+	settings := old.Settings
+	if req.Settings != nil {
+		settings = *req.Settings
+	}
+	transport := old.Transport
+	if req.Transport != nil {
+		transport = *req.Transport
+	}
+	sec := old.Security
+	if req.Security != nil {
+		sec = req.Security.Security
+		if update {
+			// Keep secrets the client did not resend (the list hides PEM).
+			if sec.Type == old.Security.Type && sec.CertMode == old.Security.CertMode &&
+				sec.CertPEM == "" && sec.KeyPEM == "" {
+				sec.CertPEM, sec.KeyPEM = old.Security.CertPEM, old.Security.KeyPEM
+			}
+			if sec.CertMode == kernel.CertModeACME && sec.ACMEDNS == old.Security.ACMEDNS &&
+				sec.ACMEDNSKey == "" && sec.ACMEDNSSecret == "" {
+				sec.ACMEDNSKey, sec.ACMEDNSSecret = old.Security.ACMEDNSKey, old.Security.ACMEDNSSecret
+			}
+		}
+	}
+	extra := old.Extra
+	if req.Extra != nil {
+		extra = json.RawMessage(strings.TrimSpace(*req.Extra))
+	}
+	acceptProxy := old.AcceptProxyProtocol
+	if req.AcceptProxyProtocol != nil {
+		acceptProxy = *req.AcceptProxyProtocol
 	}
 
 	in := kernel.Inbound{
-		OutboundIPStrategy: row.OutboundIPStrategy,
-		ID:                 row.ID,
-		Protocol:           req.Protocol,
-		Listen:             req.Listen,
-		Port:               req.Port,
-		Settings:           req.Settings,
-		Transport:          req.Transport,
-		Security:           req.Security,
-		Extra:              json.RawMessage(strings.TrimSpace(req.Extra)),
-
-		AcceptProxyProtocol: req.AcceptProxyProtocol,
+		OutboundIPStrategy:  row.OutboundIPStrategy,
+		ID:                  row.ID,
+		Protocol:            protocol,
+		Listen:              listen,
+		Port:                port,
+		Settings:            settings,
+		Transport:           transport,
+		Security:            sec,
+		Extra:               extra,
+		AcceptProxyProtocol: acceptProxy,
 	}
 	if req.OutboundIPStrategy != nil {
 		in.OutboundIPStrategy = *req.OutboundIPStrategy
@@ -758,18 +1045,23 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	allowExtra, err := kernel.ParseAllowList(req.WhitelistExtra)
-	if err != nil {
-		response.WriteJSON(w, response.ErrDefault(err.Error()))
-		return
-	}
-	if in.Port == 0 {
-		port, err := h.pickFreeInboundPort(row.NodeID, row.ID)
+
+	whitelistExtra := row.WhitelistExtra
+	if req.WhitelistExtra != nil {
+		allowExtra, err := kernel.ParseAllowList(*req.WhitelistExtra)
 		if err != nil {
 			response.WriteJSON(w, response.ErrDefault(err.Error()))
 			return
 		}
-		in.Port = port
+		whitelistExtra = strings.Join(allowExtra, ", ")
+	}
+	if !update && in.Port == 0 {
+		p, err := h.pickFreeInboundPort(row.NodeID, row.ID)
+		if err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		in.Port = p
 	}
 	if err := kernel.Normalize(k.KernelType, &in); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
@@ -781,7 +1073,16 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 	}
 	row.OutboundIPStrategy = in.OutboundIPStrategy
 	prevTargets := outboundTargets(row)
-	if err := h.setInboundRouting(&row, k.KernelType, k.Version, req.OutboundID, req.SplitRules); err != nil {
+
+	outboundID := row.OutboundID
+	if req.OutboundID != nil {
+		outboundID = *req.OutboundID
+	}
+	splitRules := rowSplitRules(row)
+	if req.SplitRules != nil {
+		splitRules = *req.SplitRules
+	}
+	if err := h.setInboundRouting(&row, k.KernelType, k.Version, outboundID, splitRules); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
@@ -807,23 +1108,64 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	row.Name = req.Name
-	row.ShareHost = req.ShareHost
-	row.Remark = strings.TrimSpace(req.Remark)
+	row.Name = name
+	row.ShareHost = shareHostInput
+	if req.Remark != nil {
+		row.Remark = strings.TrimSpace(*req.Remark)
+	}
 	prevAcceptProxy := row.AcceptProxyProtocol
-	row.RelayOnly = boolToInt(req.RelayOnly)
-	row.AcceptProxyProtocol = boolToInt(req.AcceptProxyProtocol)
+	if req.RelayOnly != nil {
+		row.RelayOnly = boolToInt(*req.RelayOnly)
+	}
+	row.AcceptProxyProtocol = boolToInt(acceptProxy)
 	if row.AcceptProxyProtocol == 1 {
 		// Clients cannot speak PROXY protocol, so direct access stops working.
 		row.RelayOnly = 1
 	}
-	row.RelayWhitelist = boolToInt(req.RelayWhitelist)
-	row.WhitelistExtra = strings.Join(allowExtra, ", ")
+	row.RelayWhitelist = boolToInt(relayWhitelist)
+	row.WhitelistExtra = whitelistExtra
 	if req.Enabled != nil {
 		row.Enabled = boolToInt(*req.Enabled)
 	}
-	row.DialerProxyInboundID = req.DialerProxyInboundID
+	if req.DialerProxyInboundID != nil {
+		row.DialerProxyInboundID = *req.DialerProxyInboundID
+	}
+	if req.Tags != nil {
+		tags, err := normalizeTags(*req.Tags)
+		if err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		row.Tags = tags
+	}
 	row.UpdatedTime = now
+
+	if req.DryRun {
+		var beforeHash string
+		var beforeFiles []kernel.File
+		if update {
+			if bp, bh, berr := h.buildKernelApplyPayload(k); berr == nil {
+				beforeHash = bh
+				beforeFiles = redactKernelFiles(bp["files"])
+			}
+		}
+		ap, afterHash, aerr := h.buildKernelApplyPayloadWithOverride(k, nil, &row)
+		if aerr != nil {
+			response.WriteJSON(w, response.ErrDefault(aerr.Error()))
+			return
+		}
+		response.WriteJSON(w, response.OK(map[string]interface{}{
+			"dryRun":      true,
+			"id":          row.ID,
+			"changed":     !update || beforeHash != afterHash,
+			"beforeHash":  beforeHash,
+			"afterHash":   afterHash,
+			"beforeFiles": beforeFiles,
+			"afterFiles":  redactKernelFiles(ap["files"]),
+			"redacted":    true,
+		}))
+		return
+	}
 
 	if update {
 		err = h.repo.SaveNodeInbound(&row)
@@ -836,11 +1178,17 @@ func (h *Handler) inboundSave(w http.ResponseWriter, r *http.Request, update boo
 	}
 
 	var warnings []string
+	if update && (oldName != row.Name || (oldMode == "dual") != (row.ShareAddressMode == "dual")) {
+		h.syncSubscriptionInboundRename(oldName, row.Name, oldMode == "dual", row.ShareAddressMode == "dual")
+	}
 	if update && prevAcceptProxy != row.AcceptProxyProtocol {
 		warnings = h.syncRelayProxyProtocol(row)
 	}
 	if err := h.applyKernel(k.ID, false); err != nil {
 		warnings = append([]string{"下发到服务器失败: " + err.Error()}, warnings...)
+	}
+	if k.KernelType == kernel.TypeXray && nftCannotMark(node.NftError) && kernel.SS2022KeyLen(in.Settings.Method) > 0 {
+		warnings = append(warnings, "该节点无完整网络权限且 Xray 无内置 NTP，若容器时钟偏差超过 30 秒，SS-2022 将无法连接；建议改用 sing-box")
 	}
 	if update {
 		warnings = append(warnings, h.applyChainReferrers(row.ID)...)
@@ -967,11 +1315,13 @@ func (h *Handler) inboundDelete(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault(msg))
 		return
 	}
+	deletedNames, deletedIDs := h.collectInboundDeletedRefs(*row)
 	h.removeInboundRelays(id)
 	if err := h.repo.DeleteNodeInbound(id); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	h.pruneSubscriptionDeletedRefs(deletedNames, deletedIDs)
 	for _, target := range outboundTargets(*row) {
 		h.applyWhitelistedTarget(target)
 	}
@@ -997,8 +1347,10 @@ func (h *Handler) inboundBatchDelete(w http.ResponseWriter, r *http.Request) {
 	f := 0
 	failures := make([]batchFailureDetail, 0)
 	var targetIDs []int64
+	var deletedRows []model.NodeInbound
 	kernelIDs := make([]int64, 0)
 	seenKernel := make(map[int64]bool)
+	relays, _ := h.repo.ListInboundRelays(0)
 	for _, id := range ids {
 		row, err := h.repo.GetNodeInbound(id)
 		if err != nil || row == nil {
@@ -1018,11 +1370,31 @@ func (h *Handler) inboundBatchDelete(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		s++
+		deletedRows = append(deletedRows, *row)
 		if !isExternalInbound(row) && !seenKernel[row.KernelID] {
 			seenKernel[row.KernelID] = true
 			kernelIDs = append(kernelIDs, row.KernelID)
 		}
 		targetIDs = append(targetIDs, outboundTargets(*row)...)
+	}
+	if len(deletedRows) > 0 {
+		byInbound := make(map[int64]bool, len(deletedRows))
+		var deletedNames []string
+		var deletedIDs []int64
+		for _, r := range deletedRows {
+			byInbound[r.ID] = true
+			deletedIDs = append(deletedIDs, r.ID)
+			deletedNames = append(deletedNames, r.Name)
+			if inboundShareMode(&r) == "dual" {
+				deletedNames = append(deletedNames, r.Name+dualStackV6Suffix)
+			}
+		}
+		for _, rel := range relays {
+			if byInbound[rel.InboundID] {
+				deletedNames = append(deletedNames, rel.Name)
+			}
+		}
+		h.pruneSubscriptionDeletedRefs(deletedNames, deletedIDs)
 	}
 	msg := "操作成功"
 	for _, kernelID := range kernelIDs {
@@ -1256,6 +1628,10 @@ func (h *Handler) buildKernelApplyPayload(k *model.NodeKernel) (map[string]inter
 // buildKernelApplyPayloadWith takes realm forwards to force on or off
 // (realm.go).
 func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride map[int64]bool) (map[string]interface{}, string, error) {
+	return h.buildKernelApplyPayloadWithOverride(k, realmOverride, nil)
+}
+
+func (h *Handler) buildKernelApplyPayloadWithOverride(k *model.NodeKernel, realmOverride map[int64]bool, overrideInbound *model.NodeInbound) (map[string]interface{}, string, error) {
 	info, ok := kernel.Lookup(k.KernelType)
 	if !ok || !info.Implemented {
 		return nil, "", fmt.Errorf("暂不支持内核 %s", k.KernelType)
@@ -1266,6 +1642,19 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	rows, err := h.repo.ListNodeInboundsByKernel(k.ID)
 	if err != nil {
 		return nil, "", err
+	}
+	if overrideInbound != nil {
+		replaced := false
+		for i := range rows {
+			if overrideInbound.ID > 0 && rows[i].ID == overrideInbound.ID {
+				rows[i] = *overrideInbound
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			rows = append(rows, *overrideInbound)
+		}
 	}
 	inbounds := make([]kernel.Inbound, 0, len(rows))
 	ports := make([]map[string]interface{}, 0, len(rows))
@@ -1306,6 +1695,11 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 	}
 	node, _ := h.repo.GetNodeByID(k.NodeID)
 	useXrayStats := k.KernelType == kernel.TypeXray && node != nil && !isLiteForwardMode(node.ForwardMode) && node.StatsCapable == 1 && nftCannotMark(node.NftError)
+	cfgMap, _ := h.repo.GetConfigsByNames([]string{singboxNTPModeConfigKey, singboxCacheFileConfigKey})
+	ntpMode := strings.ToLower(strings.TrimSpace(cfgMap[singboxNTPModeConfigKey]))
+	singboxNTP := ntpMode == "always" || (ntpMode != "never" && node != nil && nftCannotMark(node.NftError))
+	singboxNoCacheFile := strings.EqualFold(strings.TrimSpace(cfgMap[singboxCacheFileConfigKey]), "false")
+
 	rendered, err := kernel.RenderWith(k.KernelType, inbounds, kernel.RenderOptions{
 		RuleSetMirror:      proxy,
 		SingboxHTTPClient:  kernelCaps(k.Version).SingboxHTTPClient,
@@ -1313,6 +1707,8 @@ func (h *Handler) buildKernelApplyPayloadWith(k *model.NodeKernel, realmOverride
 		SingboxPreferGoDNS: kernelCaps(k.Version).SingboxPreferGoDNS,
 		NoUserMarks:        node != nil && nftCannotMark(node.NftError),
 		KernelStats:        useXrayStats,
+		SingboxNTP:         singboxNTP,
+		SingboxNoCacheFile: singboxNoCacheFile,
 	})
 	if err != nil {
 		return nil, "", err

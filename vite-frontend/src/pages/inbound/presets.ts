@@ -135,7 +135,7 @@ export interface InboundForm {
   acmeDnsKey: string;
   acmeDnsSecret: string;
   acmeDnsSet: boolean;
-  shareAddressMode: "auto" | "ipv4" | "ipv6" | "custom";
+  shareAddressMode: "auto" | "ipv4" | "ipv6" | "dual" | "custom";
   shareHost: string;
   remark: string;
   extra: string;

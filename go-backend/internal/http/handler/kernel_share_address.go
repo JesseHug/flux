@@ -7,6 +7,13 @@ import (
 	"go-backend/internal/store/model"
 )
 
+const dualStackV6Suffix = " · v6"
+
+type inboundShareEntrySpec struct {
+	Name string
+	Host string
+}
+
 func inboundShareMode(row *model.NodeInbound) string {
 	mode := strings.TrimSpace(row.ShareAddressMode)
 	if (mode == "" || mode == "auto") && strings.TrimSpace(row.ShareHost) != "" {
@@ -39,7 +46,7 @@ func inboundShareAddress(row *model.NodeInbound, node *model.Node) string {
 	switch inboundShareMode(row) {
 	case "custom":
 		return strings.Trim(strings.TrimSpace(row.ShareHost), "[]")
-	case "ipv4":
+	case "ipv4", "dual":
 		return nodeShareIP(node, false)
 	case "ipv6":
 		return nodeShareIP(node, true)
@@ -49,6 +56,24 @@ func inboundShareAddress(row *model.NodeInbound, node *model.Node) string {
 		}
 		return firstNonEmpty(strings.Trim(strings.TrimSpace(node.ServerIP), "[]"), nodeShareIP(node, false), nodeShareIP(node, true))
 	}
+}
+
+func inboundDirectShareEntries(row *model.NodeInbound, node *model.Node) []inboundShareEntrySpec {
+	if inboundShareMode(row) == "dual" {
+		var out []inboundShareEntrySpec
+		if v4 := nodeShareIP(node, false); v4 != "" {
+			out = append(out, inboundShareEntrySpec{Name: row.Name, Host: v4})
+		}
+		if v6 := nodeShareIP(node, true); v6 != "" {
+			out = append(out, inboundShareEntrySpec{Name: row.Name + dualStackV6Suffix, Host: v6})
+		}
+		return out
+	}
+	host := inboundShareAddress(row, node)
+	if host == "" {
+		return nil
+	}
+	return []inboundShareEntrySpec{{Name: row.Name, Host: host}}
 }
 
 func validateShareAddress(mode, host string, node *model.Node) error {
@@ -62,6 +87,10 @@ func validateShareAddress(mode, host string, node *model.Node) error {
 	case "ipv4", "ipv6":
 		if nodeShareIP(node, mode == "ipv6") == "" {
 			return errText("服务器未设置可用的 " + map[string]string{"ipv4": "IPv4", "ipv6": "IPv6"}[mode] + " 地址")
+		}
+	case "dual":
+		if nodeShareIP(node, false) == "" || nodeShareIP(node, true) == "" {
+			return errText("双栈分享需要服务器同时设置 IPv4 和 IPv6 地址")
 		}
 	default:
 		return errText("分享地址类型无效")

@@ -240,15 +240,21 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/node/nftables/test", h.nodeNftablesTest)
 	mux.HandleFunc("/api/v1/node/nftables/reconcile", h.nodeNftablesReconcile)
 	mux.HandleFunc("/api/v1/node/nftables/clear", h.nodeNftablesClear)
+	mux.HandleFunc("/api/v1/api-token/list", h.apiTokenList)
+	mux.HandleFunc("/api/v1/api-token/create", h.apiTokenCreate)
+	mux.HandleFunc("/api/v1/api-token/revoke", h.apiTokenRevoke)
+	mux.HandleFunc("/api/v1/api-token/delete", h.apiTokenDelete)
 	mux.HandleFunc("/api/v1/kernel/capabilities", h.kernelCapabilities)
 	mux.HandleFunc("/api/v1/kernel/list", h.kernelList)
 	mux.HandleFunc("/api/v1/kernel/install", h.kernelInstall)
 	mux.HandleFunc("/api/v1/kernel/versions", h.kernelVersions)
 	mux.HandleFunc("/api/v1/kernel/control", h.kernelControl)
 	mux.HandleFunc("/api/v1/kernel/logs", h.kernelLogs)
+	mux.HandleFunc("/api/v1/kernel/rendered", h.kernelRendered)
 	mux.HandleFunc("/api/v1/inbound/list", h.inboundList)
 	mux.HandleFunc("/api/v1/inbound/create", h.inboundCreate)
 	mux.HandleFunc("/api/v1/inbound/update", h.inboundUpdate)
+	mux.HandleFunc("/api/v1/inbound/patch", h.inboundPatch)
 	mux.HandleFunc("/api/v1/inbound/delete", h.inboundDelete)
 	mux.HandleFunc("/api/v1/inbound/batch-delete", h.inboundBatchDelete)
 	mux.HandleFunc("/api/v1/inbound/probe", h.inboundProbe)
@@ -265,6 +271,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/subscription/reset", h.subscriptionReset)
 	mux.HandleFunc("/api/v1/subscription/reset-traffic", h.subscriptionResetTraffic)
 	mux.HandleFunc("/api/v1/subscription/traffic", h.subscriptionTraffic)
+	mux.HandleFunc("/api/v1/subscription/prune-refs", h.subscriptionPruneRefs)
 	mux.HandleFunc("/api/v1/subscription/source/list", h.remoteSourceList)
 	mux.HandleFunc("/api/v1/subscription/source/save", h.remoteSourceSave)
 	mux.HandleFunc("/api/v1/subscription/source/refresh", h.remoteSourceRefresh)
@@ -550,9 +557,7 @@ func (h *Handler) getConfigs(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	ctxClaims := r.Context().Value(middleware.ClaimsContextKey)
-	claims, isAdmin := ctxClaims.(auth.Claims)
-	if !isAdmin || claims.RoleID != 0 {
+	if !isAdminRequest(r) {
 		cfgMap = repo.FilterSensitiveConfigs(cfgMap)
 	}
 	delete(cfgMap, "license_key")
@@ -1090,7 +1095,7 @@ func (h *Handler) updateSingleConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func isAdminRequest(r *http.Request) bool {
-	if r == nil {
+	if r == nil || middleware.IsAPITokenRequest(r) {
 		return false
 	}
 	claims, ok := r.Context().Value(middleware.ClaimsContextKey).(auth.Claims)
@@ -1101,6 +1106,28 @@ func normalizeAndValidateConfigValue(key, value string) (string, error) {
 	switch strings.TrimSpace(key) {
 	case latencyTargetsConfigKey:
 		return normalizeLatencyTargetsConfig(value)
+	case singboxNTPModeConfigKey:
+		v := strings.ToLower(strings.TrimSpace(value))
+		switch v {
+		case "", "auto", "always", "never":
+			if v == "" {
+				v = "auto"
+			}
+			return v, nil
+		default:
+			return "", fmt.Errorf("sing-box NTP 模式配置值无效")
+		}
+	case singboxCacheFileConfigKey:
+		v := strings.ToLower(strings.TrimSpace(value))
+		switch v {
+		case "", "true", "false":
+			if v == "" {
+				v = "true"
+			}
+			return v, nil
+		default:
+			return "", fmt.Errorf("sing-box 规则集缓存开关配置值无效")
+		}
 	case "app_logo", "app_favicon":
 		normalized := strings.TrimSpace(value)
 		if normalized == "" {

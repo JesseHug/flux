@@ -61,6 +61,7 @@ export default defineConfig({
           { text: "PostgreSQL", link: "/guide/postgresql" },
           { text: "通行证密钥登录", link: "/guide/passkey" },
           { text: "GitHub 登录", link: "/guide/github-login" },
+          { text: "AI Agent API", link: "/guide/api-for-agent" },
           { text: "AI Skill", link: "/ai-skill" },
         ],
       },

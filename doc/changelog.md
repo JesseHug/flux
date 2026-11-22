@@ -4,6 +4,23 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/JesseHug/flux/releases)。
 
+## 3.6.2
+
+2026-11-22
+
+- **sing-box 用户态 NTP 与规则集缓存开关**：
+  - 在 **系统设置 → 服务器与监控** 新增 `singbox_ntp_mode`（默认 `auto`，检测到非特权容器自动为 `sing-box` 注入用户态 `ntp` 模块，解决容器时钟漂移超过 ±30 秒导致 SS-2022 全部超时的问题）
+  - 新增 `singbox_cache_file`（默认开启，勾选 `.srs` 分流规则集时保留 `cache.db` 缓存，可按需关闭）
+- **入站与订阅更新防误清空 & 字段对称**：
+  - `/api/v1/inbound/update` 对未传入的 `outboundId`、`port`、`splitRules`、`remark`、`relayOnly` 等字段保留数据库原值，并兼容 `/api/v1/inbound/list` 返回的只读字段；新增局部更新接口 `/api/v1/inbound/patch` 及 `"dryRun": true` 预演模式，并修复保存入站时丢 `tags` 的问题
+  - `/api/v1/subscription/save` 兼容 `/api/v1/subscription/list` 返回的 `sharedIds` 等只读字段，并对未传字段保留原值（显式重置选项传 `"options": {}`）
+- **订阅链式引用联动同步与孤儿清理**：入站或中转改名、删除时自动联动同步或清理订阅中的 `chainLandingNames` / `chainRelayNames` / `chainNoneNames` / `chainNodeBindings`（同名节点仍存在时不误删），并新增 `/api/v1/subscription/prune-refs` 一键清理历史残留
+- **单入站双栈同时导出**：托管入站分享地址新增 `dual`（双栈同时导出）模式，节点同时配置 IPv4 与 IPv6 时自动一次导出两条订阅节点
+- **受控 API Token 与 AI Agent 接口文档**：
+  - 在 **系统设置 → 安全与登录** 新增可吊销的长期 API Token（`flx_...`），仅开放 `readonly` / `operator` 两个白名单权限，对用户/配置/备份/升级/联邦/宿主机节点/Token 管理等高危接口永久返回 `403`；数据库仅存 SHA-256 哈希，支持 IP/CIDR 白名单与过期时间
+  - 新增脱敏内核配置核对接口 `/api/v1/kernel/rendered` 与文档 `doc/guide/api-for-agent.md`
+- **升级**：只需升级面板
+
 ## 3.6.1
 
 2026-11-21

@@ -438,9 +438,13 @@ func (h *Handler) inboundRelayUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	oldName := rel.Name
 	if err := h.repo.UpdateInboundRelay(rel.ID, name, shareHost); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
+	}
+	if oldName != name {
+		h.syncSubscriptionInboundRename(oldName, name, false, false)
 	}
 	response.WriteJSON(w, response.OKEmpty())
 }
@@ -468,6 +472,7 @@ func (h *Handler) inboundRelayDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.refreshInboundWhitelist(rel.InboundID)
+	h.pruneSubscriptionDeletedRefs([]string{rel.Name}, nil)
 	response.WriteJSON(w, response.OKEmpty())
 }
 
@@ -539,13 +544,12 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 		}
 		proxy := importedProxy(&row)
 		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
-			host := inboundShareAddress(&row, node)
-			if host != "" {
+			for _, entry := range inboundDirectShareEntries(&row, node) {
 				endpoints = append(endpoints, kernel.Endpoint{
 					InboundID:            row.ID,
 					DialerProxyInboundID: row.DialerProxyInboundID,
-					Name:                 row.Name,
-					Host:                 host,
+					Name:                 entry.Name,
+					Host:                 entry.Host,
 					Port:                 row.Port,
 					Inbound:              in,
 					Direct:               true,

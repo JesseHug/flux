@@ -1397,3 +1397,42 @@ export const updateInboundRelay = (data: {
 }) => Network.post("/inbound/relay/update", data);
 export const deleteInboundRelay = (id: number, force = false) =>
   Network.post("/inbound/relay/delete", { id, force });
+
+export type APITokenScope = "readonly" | "operator";
+
+export interface APITokenItem {
+  id: number;
+  name: string;
+  prefix: string;
+  scope: APITokenScope;
+  allowedIps?: string;
+  userId: number;
+  userName?: string;
+  createdTime: number;
+  expiresAt?: number;
+  lastUsedAt?: number;
+  lastUsedIp?: string;
+  revoked: boolean;
+  expired: boolean;
+}
+
+export interface CreateAPITokenResult {
+  token: string;
+  item: APITokenItem;
+}
+
+export const listApiTokens = () =>
+  Network.post<APITokenItem[]>("/api-token/list", {});
+
+export const createApiToken = (data: {
+  name: string;
+  scope: APITokenScope;
+  allowedIps?: string;
+  expiresDays?: number;
+}) => Network.post<CreateAPITokenResult>("/api-token/create", data);
+
+export const revokeApiToken = (id: number) =>
+  Network.post("/api-token/revoke", { id });
+
+export const deleteApiToken = (id: number) =>
+  Network.post("/api-token/delete", { id });

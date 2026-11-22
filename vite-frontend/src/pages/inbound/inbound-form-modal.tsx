@@ -253,6 +253,8 @@ export function InboundFormModal({
       return "请先在服务器设置 IPv4 地址";
     if (form.shareAddressMode === "ipv6" && !shareV6)
       return "请先在服务器设置 IPv6 地址";
+    if (form.shareAddressMode === "dual" && (!shareV4 || !shareV6))
+      return "双栈导出需要服务器同时设置 IPv4 和 IPv6 地址";
     if (form.port.trim()) {
       const port = Number(form.port);
 
@@ -1113,6 +1115,7 @@ export function InboundFormModal({
                             disabledKeys={[
                               ...(shareV4 ? [] : ["ipv4"]),
                               ...(shareV6 ? [] : ["ipv6"]),
+                              ...(shareV4 && shareV6 ? [] : ["dual"]),
                             ]}
                             label="分享地址"
                             selectedKeys={[form.shareAddressMode]}
@@ -1144,6 +1147,19 @@ export function InboundFormModal({
                             >
                               服务器 IPv6
                               {shareV6 ? ` · ${shareV6}` : "（未设置）"}
+                            </SelectItem>
+                            <SelectItem
+                              key="dual"
+                              textValue={
+                                shareV4 && shareV6
+                                  ? `双栈同时导出（${shareV4} + ${shareV6}）`
+                                  : "双栈同时导出（需同时设置 IPv4 与 IPv6）"
+                              }
+                            >
+                              双栈同时导出
+                              {shareV4 && shareV6
+                                ? ` · ${shareV4} + ${shareV6}`
+                                : "（需同时设置 IPv4 与 IPv6）"}
                             </SelectItem>
                             <SelectItem
                               key="custom"

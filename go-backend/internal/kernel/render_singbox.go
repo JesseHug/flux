@@ -53,6 +53,16 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 		"inbounds":  inboundList,
 		"outbounds": outboundsList,
 	}
+	if opts.SingboxNTP {
+		// sing-box keeps time in user space (write_to_system defaults to false),
+		// avoiding CAP_SYS_TIME in unprivileged LXC containers.
+		cfg["ntp"] = obj{
+			"enabled":     true,
+			"server":      "time.apple.com",
+			"server_port": 123,
+			"interval":    "30m",
+		}
+	}
 	if opts.SingboxPreferGoDNS {
 		// The implicit resolver uses systemd-resolved over DBus. Servers
 		// without that service cannot resolve REALITY/ShadowTLS handshakes
@@ -93,9 +103,11 @@ func renderSingbox(inbounds []Inbound, opts RenderOptions) (string, error) {
 		route["rules"], route["final"] = rules, "direct"
 		if defs := singboxRuleSets(sets, opts); len(defs) > 0 {
 			// sing-box downloads the 分流 rule sets itself and keeps them in
-			// the cache file across restarts.
+			// the cache file across restarts unless explicitly disabled.
 			route["rule_set"] = defs
-			cfg["experimental"] = obj{"cache_file": obj{"enabled": true, "path": "cache.db"}}
+			if !opts.SingboxNoCacheFile {
+				cfg["experimental"] = obj{"cache_file": obj{"enabled": true, "path": "cache.db"}}
+			}
 			if opts.SingboxHTTPClient {
 				cfg["http_clients"] = []interface{}{obj{"tag": ruleSetHTTPClient}}
 			}

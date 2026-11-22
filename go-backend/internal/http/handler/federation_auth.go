@@ -3,7 +3,6 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"go-backend/internal/http/response"
+	"go-backend/internal/security"
 	"go-backend/internal/store/repo"
 )
 
@@ -167,138 +167,13 @@ func isPeerShareFlowExceeded(share *repo.PeerShare) bool {
 }
 
 func normalizePeerShareAllowedIPs(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return "", nil
-	}
-
-	parts := strings.Split(raw, ",")
-	normalized := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-
-	for _, part := range parts {
-		item := strings.TrimSpace(part)
-		if item == "" {
-			continue
-		}
-
-		if strings.Contains(item, "/") {
-			_, network, err := net.ParseCIDR(item)
-			if err != nil {
-				return "", fmt.Errorf("Invalid allowed IP or CIDR: %s", item)
-			}
-			item = network.String()
-		} else {
-			ip := parseIPLiteral(item)
-			if ip == nil {
-				return "", fmt.Errorf("Invalid allowed IP or CIDR: %s", item)
-			}
-			item = ip.String()
-		}
-
-		if _, exists := seen[item]; exists {
-			continue
-		}
-		seen[item] = struct{}{}
-		normalized = append(normalized, item)
-	}
-
-	return strings.Join(normalized, ","), nil
+	return security.NormalizeAllowedIPs(raw)
 }
 
 func resolvePeerClientIP(r *http.Request) net.IP {
-	if r == nil {
-		return nil
-	}
-
-	remoteIP := parseIPLiteral(r.RemoteAddr)
-	if isTrustedProxyIP(remoteIP) {
-		if ip := parseForwardedFor(r.Header.Get("X-Forwarded-For")); ip != nil {
-			return ip
-		}
-		if ip := parseIPLiteral(r.Header.Get("X-Real-IP")); ip != nil {
-			return ip
-		}
-	}
-
-	return remoteIP
-}
-
-func parseForwardedFor(raw string) net.IP {
-	for _, part := range strings.Split(raw, ",") {
-		if ip := parseIPLiteral(part); ip != nil {
-			return ip
-		}
-	}
-	return nil
-}
-
-func parseIPLiteral(raw string) net.IP {
-	value := strings.Trim(strings.TrimSpace(raw), "\"")
-	if value == "" {
-		return nil
-	}
-
-	if ip := net.ParseIP(value); ip != nil {
-		return normalizeIPAddress(ip)
-	}
-
-	host, _, err := net.SplitHostPort(value)
-	if err != nil {
-		return nil
-	}
-
-	host = strings.Trim(strings.TrimSpace(host), "[]")
-	if host == "" {
-		return nil
-	}
-	return normalizeIPAddress(net.ParseIP(host))
-}
-
-func normalizeIPAddress(ip net.IP) net.IP {
-	if ip == nil {
-		return nil
-	}
-	if v4 := ip.To4(); v4 != nil {
-		return v4
-	}
-	return ip.To16()
-}
-
-func isTrustedProxyIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	return security.ResolveClientIP(r)
 }
 
 func isPeerIPAllowed(clientIP net.IP, whitelist string) bool {
-	if clientIP == nil {
-		return false
-	}
-
-	for _, part := range strings.Split(whitelist, ",") {
-		entry := strings.TrimSpace(part)
-		if entry == "" {
-			continue
-		}
-
-		if strings.Contains(entry, "/") {
-			_, network, err := net.ParseCIDR(entry)
-			if err != nil {
-				continue
-			}
-			if network.Contains(clientIP) {
-				return true
-			}
-			continue
-		}
-
-		allowedIP := parseIPLiteral(entry)
-		if allowedIP != nil && allowedIP.Equal(clientIP) {
-			return true
-		}
-	}
-
-	return false
+	return security.IsIPAllowed(clientIP, whitelist)
 }

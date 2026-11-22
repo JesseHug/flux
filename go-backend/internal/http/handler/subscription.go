@@ -569,48 +569,86 @@ func (h *Handler) subscriptionList(w http.ResponseWriter, r *http.Request) {
 }
 
 type subscriptionRequest struct {
-	ID         int64       `json:"id"`
-	Name       string      `json:"name"`
-	Kind       string      `json:"kind"`
-	GroupIDs   []int64     `json:"groupIds"`
-	Options    subPipeline `json:"options"`
-	ExpireTime int64       `json:"expireTime"`
-	Enabled    *bool       `json:"enabled"`
-	Remark     string      `json:"remark"`
+	ID         int64        `json:"id"`
+	Name       *string      `json:"name"`
+	Kind       string       `json:"kind"`
+	GroupIDs   *[]int64     `json:"groupIds"`
+	Options    *subPipeline `json:"options"`
+	ExpireTime *int64       `json:"expireTime"`
+	Enabled    *bool        `json:"enabled"`
+	Remark     *string      `json:"remark"`
 	// TrafficLimit is in bytes (0 = unlimited); ResetDay 1-28 (0 = never).
-	TrafficLimit int64 `json:"trafficLimit"`
-	ResetDay     int   `json:"resetDay"`
+	TrafficLimit *int64 `json:"trafficLimit"`
+	ResetDay     *int   `json:"resetDay"`
+
+	// Read-only view fields echoed when clients round-trip /subscription/list items.
+	Token         string  `json:"token,omitempty"`
+	Path          string  `json:"path,omitempty"`
+	SharedIDs     []int64 `json:"sharedIds,omitempty"`
+	Active        bool    `json:"active,omitempty"`
+	NodeCount     int     `json:"nodeCount,omitempty"`
+	UploadBytes   int64   `json:"uploadBytes,omitempty"`
+	DownloadBytes int64   `json:"downloadBytes,omitempty"`
+	OverQuota     bool    `json:"overQuota,omitempty"`
+	TrafficSince  int64   `json:"trafficSince,omitempty"`
+	UserID        int64   `json:"userId,omitempty"`
+	UserName      string  `json:"userName,omitempty"`
 }
 
-// validate checks the request and keeps the node groups that exist.
-func (req *subscriptionRequest) validate(c *subContext) error {
-	req.Name = strings.TrimSpace(req.Name)
-	if req.Name == "" || len([]rune(req.Name)) > 100 {
+// validate checks the request, preserving omitted fields from existing when present.
+func (req *subscriptionRequest) validate(c *subContext, existing *model.Subscription) error {
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" || len([]rune(trimmed)) > 100 {
+			return errText("请填写名称（最多 100 个字）")
+		}
+		req.Name = &trimmed
+	} else if existing != nil {
+		name := existing.Name
+		req.Name = &name
+	} else {
 		return errText("请填写名称（最多 100 个字）")
 	}
+
 	// Every subscription has its own credentials.
 	req.Kind = model.SubscriptionShare
-	if req.ExpireTime < 0 {
-		req.ExpireTime = 0
+	if req.ExpireTime != nil && *req.ExpireTime < 0 {
+		zero := int64(0)
+		req.ExpireTime = &zero
 	}
-	if req.TrafficLimit < 0 {
-		req.TrafficLimit = 0
+	if req.TrafficLimit != nil && *req.TrafficLimit < 0 {
+		zero := int64(0)
+		req.TrafficLimit = &zero
 	}
-	if req.ResetDay < 0 || req.ResetDay > 28 {
+	if req.ResetDay != nil && (*req.ResetDay < 0 || *req.ResetDay > 28) {
 		return errText("每月重置日只能是 1–28 号")
+	}
+	if req.Options == nil {
+		var p subPipeline
+		if existing != nil {
+			p = parsePipeline(existing.Options)
+		}
+		req.Options = &p
 	}
 	if err := req.Options.normalize(); err != nil {
 		return err
 	}
+
+	var srcIDs []int64
+	if req.GroupIDs != nil {
+		srcIDs = *req.GroupIDs
+	} else if existing != nil {
+		srcIDs = repo.ParseGroupIDs(existing.GroupIDs)
+	}
 	var ids []int64
 	seen := map[int64]bool{}
-	for _, id := range req.GroupIDs {
+	for _, id := range srcIDs {
 		if c.groups[id] != nil && !seen[id] {
 			seen[id] = true
 			ids = append(ids, id)
 		}
 	}
-	req.GroupIDs = ids
+	req.GroupIDs = &ids
 	if len(ids) == 0 {
 		return errText("请至少选择一个节点组")
 	}
@@ -632,14 +670,6 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	err = req.validate(c)
-	if err == nil {
-		err = h.checkPipelineTemplates(req.Options)
-	}
-	if err != nil {
-		response.WriteJSON(w, response.ErrDefault(err.Error()))
-		return
-	}
 	now := time.Now()
 	var s *model.Subscription
 	var before []int64
@@ -651,26 +681,43 @@ func (h *Handler) subscriptionSave(w http.ResponseWriter, r *http.Request) {
 		if isShare(s) {
 			before = c.inboundIDs(s)
 		}
-	} else {
+	}
+	err = req.validate(c, s)
+	if err == nil {
+		err = h.checkPipelineTemplates(*req.Options)
+	}
+	if err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	if s == nil {
 		s = &model.Subscription{Token: randomHex(16), Enabled: 1, CreatedTime: now.UnixMilli(), TrafficSince: now.UnixMilli()}
 	}
-	s.Name = req.Name
+	s.Name = *req.Name
 	s.Kind = req.Kind
 	if isShare(s) && (s.UUID == "" || s.Password == "") {
 		s.UUID, s.Password = newUUID(), randomHex(16)
 	}
-	s.GroupIDs = repo.FormatGroupIDs(req.GroupIDs)
-	opts, _ := json.Marshal(req.Options)
+	s.GroupIDs = repo.FormatGroupIDs(*req.GroupIDs)
+	opts, _ := json.Marshal(*req.Options)
 	s.Options = string(opts)
-	s.ExpireTime = req.ExpireTime
-	s.Remark = strings.TrimSpace(req.Remark)
-	s.TrafficLimit = req.TrafficLimit
-	if req.ResetDay != s.ResetDay && req.ResetDay > 0 {
-		// Count from now: a newly set reset day must not wipe this month.
-		s.TrafficResetTime = now.UnixMilli()
-		_ = h.repo.MarkSubscriptionResetTime(s.ID, s.TrafficResetTime)
+	if req.ExpireTime != nil {
+		s.ExpireTime = *req.ExpireTime
 	}
-	s.ResetDay = req.ResetDay
+	if req.Remark != nil {
+		s.Remark = strings.TrimSpace(*req.Remark)
+	}
+	if req.TrafficLimit != nil {
+		s.TrafficLimit = *req.TrafficLimit
+	}
+	if req.ResetDay != nil {
+		if *req.ResetDay != s.ResetDay && *req.ResetDay > 0 {
+			// Count from now: a newly set reset day must not wipe this month.
+			s.TrafficResetTime = now.UnixMilli()
+			_ = h.repo.MarkSubscriptionResetTime(s.ID, s.TrafficResetTime)
+		}
+		s.ResetDay = *req.ResetDay
+	}
 	if req.Enabled != nil {
 		s.Enabled = boolToInt(*req.Enabled)
 	}
@@ -847,19 +894,20 @@ func (h *Handler) subscriptionPreview(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSON(w, response.ErrDefault("请求参数错误"))
 		return
 	}
-	if req.Name == "" {
-		req.Name = "preview"
+	if req.Name == nil {
+		previewName := "preview"
+		req.Name = &previewName
 	}
 	c, err := h.loadSubContext()
 	if err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
-	if err := req.validate(c); err != nil {
+	if err := req.validate(c, nil); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}
-	draft := &model.Subscription{GroupIDs: repo.FormatGroupIDs(req.GroupIDs)}
+	draft := &model.Subscription{GroupIDs: repo.FormatGroupIDs(*req.GroupIDs)}
 	source := h.subNodes(c, draft)
 	result := kernel.ApplySubOptions(source, req.Options.options())
 	items := previewItems(result)

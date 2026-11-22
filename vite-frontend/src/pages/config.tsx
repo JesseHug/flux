@@ -45,6 +45,7 @@ import {
   Field,
   SubHeading,
 } from "@/pages/config/section";
+import { ApiTokenCard } from "@/pages/config/api-token-card";
 import { GistBackup } from "@/pages/config/gist-backup";
 import { isAdmin } from "@/utils/auth";
 import { getCachedConfigs, configCache, updateSiteConfig } from "@/config/site";
@@ -75,6 +76,8 @@ interface ConfigItem {
   description?: string;
   type: "input" | "switch" | "select" | "bg_image";
   options?: { label: string; value: string; description?: string }[];
+  defaultTrue?: boolean;
+  defaultValue?: string;
   dependsOn?: string; // 依赖的配置项key
   dependsValue?: string; // 依赖的配置项值
 }
@@ -258,6 +261,40 @@ const CONFIG_ITEMS: ConfigItem[] = [
       "订阅源、网址模板和图标库可从 127.0.0.1、10.x、192.168.x 等内网地址下载，例如同机或局域网里的 Sub-Store；默认关闭，避免面板被用来读取内网服务",
     type: "switch",
   },
+  {
+    key: "singbox_ntp_mode",
+    label: "sing-box 用户态 NTP 校时",
+    placeholder: "请选择校时策略",
+    description:
+      "解决非特权容器（LXC / Docker）无改时权限、系统时钟漂移超过 ±30 秒导致 SS-2022 全部超时的问题；由 sing-box 在用户态计算时间差，不改系统时钟",
+    type: "select",
+    defaultValue: "auto",
+    options: [
+      {
+        label: "自动（仅容器节点启用，推荐）",
+        value: "auto",
+        description: "检测到容器环境自动注入 ntp 模块",
+      },
+      {
+        label: "始终启用（所有节点）",
+        value: "always",
+        description: "所有 sing-box 节点均开启用户态 NTP",
+      },
+      {
+        label: "关闭",
+        value: "never",
+        description: "完全依赖宿主机系统时钟",
+      },
+    ],
+  },
+  {
+    key: "singbox_cache_file",
+    label: "sing-box 规则集缓存（cache.db）",
+    description:
+      "勾选 .srs 分流规则集时写入 experimental.cache_file（仅约 64–128KB），加速内核重启并避免 GitHub 抖动时重下规则集；默认开启",
+    type: "switch",
+    defaultTrue: true,
+  },
 ];
 
 const BACKUP_TYPE_OPTIONS = [
@@ -300,6 +337,8 @@ const getInitialConfigs = (): Record<string, string> => {
     "app_bg_image_dark",
     "github_proxy_enabled",
     "github_proxy_url",
+    "singbox_ntp_mode",
+    "singbox_cache_file",
     "allow_local_remote_addr",
     "fetch_allow_local",
     "hide_footer_brand",
@@ -374,6 +413,8 @@ const SECTION_CONFIG_KEYS: Partial<Record<SectionKey, string[]>> = {
     "monitor_retention_days",
     "github_proxy_enabled",
     "github_proxy_url",
+    "singbox_ntp_mode",
+    "singbox_cache_file",
   ],
 };
 
@@ -1254,7 +1295,11 @@ export default function ConfigPage() {
           <Switch
             aria-label={item.label}
             className={isChanged ? "ring-2 ring-warning-300" : undefined}
-            isSelected={configs[item.key] === "true"}
+            isSelected={
+              item.defaultTrue
+                ? configs[item.key] !== "false"
+                : configs[item.key] === "true"
+            }
             size="sm"
             onValueChange={(checked) =>
               handleConfigChange(item.key, checked ? "true" : "false")
@@ -1262,7 +1307,9 @@ export default function ConfigPage() {
           />
         );
 
-      case "select":
+      case "select": {
+        const selectedValue = configs[item.key] || item.defaultValue || "";
+
         return (
           <Select
             aria-label={item.label}
@@ -1271,8 +1318,8 @@ export default function ConfigPage() {
                 ? "border-warning-300 data-[hover=true]:border-warning-400"
                 : "",
             }}
-            placeholder="请选择验证码类型"
-            selectedKeys={configs[item.key] ? [configs[item.key]] : []}
+            placeholder={item.placeholder || "请选择"}
+            selectedKeys={selectedValue ? [selectedValue] : []}
             size="sm"
             variant="bordered"
             onSelectionChange={(keys) => {
@@ -1290,6 +1337,7 @@ export default function ConfigPage() {
             )) || []}
           </Select>
         );
+      }
 
       default:
         return null;
@@ -1635,6 +1683,7 @@ export default function ConfigPage() {
             {renderItem("admin_password_login_disabled")}
             {renderItem("allow_local_remote_addr")}
             {renderItem("fetch_allow_local")}
+            <ApiTokenCard />
           </ConfigSection>
 
           <ConfigSection
@@ -1649,6 +1698,8 @@ export default function ConfigPage() {
             {renderItem("monitor_retention_days")}
             {renderItem("github_proxy_enabled")}
             {renderItem("github_proxy_url")}
+            {renderItem("singbox_ntp_mode")}
+            {renderItem("singbox_cache_file")}
           </ConfigSection>
 
           <ConfigSection

@@ -302,6 +302,7 @@ func (h *Handler) inboundExternalUpdate(w http.ResponseWriter, r *http.Request) 
 	if row.SourceID != 0 && row.ImportedName == "" {
 		row.ImportedName = row.Name
 	}
+	oldName := row.Name
 	row.Name = name
 	row.ShareHost = host
 	row.Remark = strings.TrimSpace(req.Remark)
@@ -311,6 +312,9 @@ func (h *Handler) inboundExternalUpdate(w http.ResponseWriter, r *http.Request) 
 	if err := h.repo.SaveNodeInbound(row); err != nil {
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
+	}
+	if oldName != name {
+		h.syncSubscriptionInboundRename(oldName, name, false, false)
 	}
 	// Relay forwards dial the stored address; point them at the new one.
 	if problems := h.retargetRelays(row); len(problems) > 0 {
