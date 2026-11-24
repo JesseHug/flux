@@ -88,11 +88,21 @@ function ShareEntryCard({ entry }: { entry: InboundShareEntry }) {
       <div className="min-w-0">
         <div className="flex items-center gap-2 min-w-0">
           <Chip
-            color={entry.kind === "relay" ? "secondary" : "primary"}
+            color={
+              entry.kind === "relay"
+                ? "secondary"
+                : entry.kind === "cdn"
+                  ? "warning"
+                  : "primary"
+            }
             size="sm"
             variant="flat"
           >
-            {entry.kind === "relay" ? "中转" : "直连"}
+            {entry.kind === "relay"
+              ? "中转"
+              : entry.kind === "cdn"
+                ? "CF CDN"
+                : "直连"}
           </Chip>
           <span className="font-medium truncate">{entry.name}</span>
         </div>

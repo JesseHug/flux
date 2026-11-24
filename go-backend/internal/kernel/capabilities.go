@@ -192,7 +192,7 @@ var catalog = []Info{
 		Name:        "Xray",
 		Implemented: true,
 		ReleaseRepo: "XTLS/Xray-core",
-		CertModes:   []string{"self", "file"},
+		CertModes:   []string{"self", "pem", "file"},
 		Download:    xrayDownload,
 		Protocols: []ProtocolCap{
 			{Protocol: ProtocolVLESS, Transports: []TransportCap{
@@ -224,7 +224,7 @@ var catalog = []Info{
 		Name:        "sing-box",
 		Implemented: true,
 		ReleaseRepo: "SagerNet/sing-box",
-		CertModes:   []string{"self", "file", "acme"},
+		CertModes:   []string{"self", "pem", "file", "acme"},
 		Download:    singboxDownload,
 		Protocols: []ProtocolCap{
 			{Protocol: ProtocolHysteria2, Transports: []TransportCap{{Type: TransportQUIC, Securities: []string{SecurityTLS}}}},

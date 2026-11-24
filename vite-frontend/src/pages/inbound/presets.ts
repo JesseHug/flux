@@ -45,6 +45,7 @@ export const SECURITY_LABELS: Record<string, string> = {
 
 export const CERT_MODE_LABELS: Record<string, string> = {
   self: "自动生成自签证书",
+  pem: "粘贴证书内容（PEM / CF Origin）",
   file: "使用服务器上的证书文件",
   acme: "自动申请证书（ACME）",
 };
@@ -121,6 +122,9 @@ export interface InboundForm {
   alpn: string;
   fingerprint: string;
   certMode: string;
+  certPem: string;
+  keyPem: string;
+  certPemSet: boolean;
   certFile: string;
   keyFile: string;
   realityDest: string;
@@ -155,6 +159,14 @@ export interface InboundForm {
     | "prefer_ipv6";
   splitRules: SplitRuleForm[];
   enabled: boolean;
+  cdnEnabled: boolean;
+  cdnDomain: string;
+  cdnEdgePort: string;
+  cdnEdgeTls: "auto" | "on" | "off";
+  cdnPoolId: string;
+  cdnCustomEntries: string;
+  cdnKeepOriginHost: boolean;
+  cdnOnlyCfOrigin: boolean;
 }
 
 export interface Preset {
@@ -169,6 +181,8 @@ export interface Preset {
   vlessEnc?: boolean;
   needsDomain?: boolean;
   certMode?: string;
+  cdnDefault?: boolean;
+  defaultPort?: number;
 }
 
 export const PRESETS: Preset[] = [
@@ -199,6 +213,43 @@ export const PRESETS: Preset[] = [
     protocol: "vless",
     transport: "xhttp",
     security: "reality",
+  },
+  {
+    key: "vless-ws-cf-cdn",
+    label: "VLESS + WS + TLS（CF CDN）",
+    description: "套 Cloudflare 橙色云回源；填一个 CF 域名即可用",
+    protocol: "vless",
+    transport: "ws",
+    security: "tls",
+    needsDomain: true,
+    certMode: "self",
+    cdnDefault: true,
+    defaultPort: 2053,
+  },
+  {
+    key: "vless-xhttp-cf-cdn",
+    label: "VLESS + XHTTP + TLS（CF CDN）",
+    description: "XHTTP 走 CF 橙色云，吞吐更高（Xray + Mihomo）",
+    kernel: "xray",
+    protocol: "vless",
+    transport: "xhttp",
+    security: "tls",
+    needsDomain: true,
+    certMode: "self",
+    cdnDefault: true,
+    defaultPort: 8443,
+  },
+  {
+    key: "vless-grpc-cf-cdn",
+    label: "VLESS + gRPC + TLS（CF CDN）",
+    description: "gRPC HTTP/2 多路复用，适配 CF Full / Full Strict",
+    protocol: "vless",
+    transport: "grpc",
+    security: "tls",
+    needsDomain: true,
+    certMode: "self",
+    cdnDefault: true,
+    defaultPort: 2083,
   },
   {
     key: "ss2022",
@@ -370,6 +421,9 @@ export function emptyForm(
     alpn: "",
     fingerprint: caps?.defaults.fingerprint ?? "chrome",
     certMode: "self",
+    certPem: "",
+    keyPem: "",
+    certPemSet: false,
     certFile: "",
     keyFile: "",
     realityDest: "",
@@ -396,6 +450,14 @@ export function emptyForm(
     outboundIpStrategy: "auto",
     splitRules: [],
     enabled: true,
+    cdnEnabled: false,
+    cdnDomain: "",
+    cdnEdgePort: "",
+    cdnEdgeTls: "auto",
+    cdnPoolId: "",
+    cdnCustomEntries: "",
+    cdnKeepOriginHost: true,
+    cdnOnlyCfOrigin: false,
   };
 }
 
@@ -427,6 +489,8 @@ export function applyPreset(
     sni = "";
   }
 
+  const cdnDefault = Boolean(preset.cdnDefault);
+
   return {
     ...form,
     protocol: preset.protocol,
@@ -437,6 +501,15 @@ export function applyPreset(
     sni,
     certMode:
       preset.certMode ?? (form.certMode === "acme" ? "self" : form.certMode),
+    port: preset.defaultPort ? String(preset.defaultPort) : form.port,
+    cdnEnabled: cdnDefault,
+    cdnDomain: cdnDefault ? form.cdnDomain || sni : form.cdnDomain,
+    cdnEdgePort: cdnDefault
+      ? preset.defaultPort
+        ? String(preset.defaultPort)
+        : form.cdnEdgePort || "443"
+      : form.cdnEdgePort,
+    cdnKeepOriginHost: cdnDefault ? true : form.cdnKeepOriginHost,
     name: isAutoName(form.name) ? preset.label : form.name,
   };
 }
@@ -478,6 +551,9 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     alpn: (item.security.alpn ?? []).join(","),
     fingerprint: item.security.fingerprint ?? "",
     certMode: item.security.certMode || "self",
+    certPem: "",
+    keyPem: "",
+    certPemSet: Boolean(item.security.certPemSet),
     certFile: item.security.certFile ?? "",
     keyFile: item.security.keyFile ?? "",
     realityDest: item.security.realityDest ?? "",
@@ -506,6 +582,19 @@ export function formFromItem(item: InboundApiItem): InboundForm {
     outboundIpStrategy: item.outboundIpStrategy || "auto",
     splitRules: splitFormFromItem(item),
     enabled: item.enabled,
+    cdnEnabled: Boolean(item.cdn?.enabled),
+    cdnDomain: item.cdn?.domain ?? "",
+    cdnEdgePort: item.cdn?.edgePort ? String(item.cdn.edgePort) : "",
+    cdnEdgeTls:
+      item.cdn?.edgeTls === true
+        ? "on"
+        : item.cdn?.edgeTls === false
+          ? "off"
+          : "auto",
+    cdnPoolId: item.cdn?.poolId ? String(item.cdn.poolId) : "",
+    cdnCustomEntries: item.cdn?.customEntries ?? "",
+    cdnKeepOriginHost: item.cdn?.keepOriginHost ?? true,
+    cdnOnlyCfOrigin: Boolean(item.cdn?.onlyCfOrigin),
   };
 }
 
@@ -641,6 +730,14 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
       alpn: form.alpn.trim() ? splitList(form.alpn) : undefined,
       fingerprint: form.fingerprint.trim() || undefined,
       certMode: form.securityType === "tls" ? form.certMode : undefined,
+      certPem:
+        form.securityType === "tls" && form.certMode === "pem"
+          ? form.certPem.trim() || undefined
+          : undefined,
+      keyPem:
+        form.securityType === "tls" && form.certMode === "pem"
+          ? form.keyPem.trim() || undefined
+          : undefined,
       certFile: form.certFile.trim() || undefined,
       keyFile: form.keyFile.trim() || undefined,
       realityDest: form.realityDest.trim() || undefined,
@@ -689,6 +786,25 @@ export function toPayload(form: InboundForm): InboundMutationPayload {
     outboundIpStrategy: form.outboundIpStrategy,
     splitRules: splitPayload(form.splitRules),
     enabled: form.enabled,
+    cdn: form.cdnEnabled
+      ? {
+          enabled: true,
+          domain: form.cdnDomain.trim() || form.sni.trim() || undefined,
+          edgePort: form.cdnEdgePort.trim()
+            ? Number(form.cdnEdgePort)
+            : undefined,
+          edgeTls:
+            form.cdnEdgeTls === "on"
+              ? true
+              : form.cdnEdgeTls === "off"
+                ? false
+                : undefined,
+          poolId: form.cdnPoolId ? Number(form.cdnPoolId) : undefined,
+          customEntries: form.cdnCustomEntries.trim() || undefined,
+          keepOriginHost: form.cdnKeepOriginHost,
+          onlyCfOrigin: form.cdnOnlyCfOrigin,
+        }
+      : { enabled: false },
   };
 }
 

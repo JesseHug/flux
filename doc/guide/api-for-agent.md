@@ -165,6 +165,19 @@ API Token 仅开放以下两个受限 Scope，**面板刻意不提供完整管�
 - `POST /api/v1/inbound/relay/update` `{ "id": 10, "name": "广港中转-新", "shareHost": "" }`（改名自动联动同步订阅中的链式引用名称）
 - `POST /api/v1/inbound/relay/delete` `{ "id": 10 }`（删除自动清理孤儿引用）
 
+### 4.6 Cloudflare CDN 回源与 CF 优选池
+
+- **入站 CDN 与 PEM 证书配置**：在 `/api/v1/inbound/create`、`/api/v1/inbound/update`、`/api/v1/inbound/patch` 中：
+  - `security.certMode` 支持 `"pem"`，可直接在 `security.certPem` / `security.keyPem` 传入 Cloudflare 15 年源服务器证书（Origin Certificate）或自定义证书 PEM，随内核配置内联下发。
+  - `cdn` 对象支持：`{ "enabled": true, "domain": "cdn.example.com", "edgePort": 443, "edgeTls": true, "poolId": 1, "customEntries": "104.16.132.229:443#移动", "keepOriginHost": true, "onlyCfOrigin": true }`。
+  - 启用 `onlyCfOrigin: true` 后，节点 `nftables` 防火墙白名单会自动并入 Cloudflare 官方回源 IPv4/IPv6 CIDR；`/api/v1/inbound/share` 与订阅会自动展开优选池多条节点（`Host = SNI = domain`，强制开启客户端边缘 TLS 证书校验）。
+- **CF 优选池接口**：
+  - `POST /api/v1/cf-pool/list` `{}` — 查询优选池列表（`readonly` / `operator` 均可用）。
+  - `POST /api/v1/cf-pool/parse-preview` `{ "rawText": "...", "defaultPort": 443, "maxEntries": 10, "ipFilter": "all" }` — 预览解析结果（`readonly` / `operator` 均可用）。
+  - `POST /api/v1/cf-pool/save` — 创建或更新手动列表 / 远程 URL 定时拉取优选池（`operator` 可用）。
+  - `POST /api/v1/cf-pool/refresh` `{ "id": 1 }` — 立即从远程 URL 拉取或重解析优选池（拉取失败自动保留旧缓存，`operator` 可用）。
+  - `POST /api/v1/cf-pool/delete` `{ "id": 1, "force": false }` — 删除优选池（`force: true` 时自动解绑引用的入站，`operator` 可用）。
+
 ---
 
 ## 5. 订阅与孤儿引用清理

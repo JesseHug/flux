@@ -37,7 +37,7 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 			RelayOnly: i.RelayOnly, AcceptProxyProtocol: i.AcceptProxyProtocol,
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
-			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, OutboundIPStrategy: i.OutboundIPStrategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID,
+			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, OutboundIPStrategy: i.OutboundIPStrategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
 		})
 	}
 
@@ -102,6 +102,17 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 			Enabled: sub.Enabled, Remark: sub.Remark, Inx: sub.Inx, CreatedTime: sub.CreatedTime,
 			UploadBytes: sub.UploadBytes, DownloadBytes: sub.DownloadBytes, TrafficLimit: sub.TrafficLimit,
 			ResetDay: sub.ResetDay, TrafficResetTime: sub.TrafficResetTime, TrafficSince: sub.TrafficSince, UserID: sub.UserID,
+		})
+	}
+	var pools []model.CFPool
+	if err := r.db.Order("id ASC").Find(&pools).Error; err != nil {
+		return nil, err
+	}
+	for _, p := range pools {
+		out.CFPools = append(out.CFPools, model.CFPoolBackup{
+			ID: p.ID, Name: p.Name, Kind: p.Kind, URL: p.URL, RawText: p.RawText, UserAgent: p.UserAgent,
+			IntervalHours: p.IntervalHours, DefaultPort: p.DefaultPort, MaxEntries: p.MaxEntries, IPFilter: p.IPFilter,
+			CachedEntries: p.CachedEntries, EntryCount: p.EntryCount, Enabled: p.Enabled, CreatedTime: p.CreatedTime,
 		})
 	}
 	return out, nil
@@ -169,6 +180,31 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 		}
 	}
 
+	for _, p := range b.CFPools {
+		kind := p.Kind
+		if kind != model.CFPoolKindURL {
+			kind = model.CFPoolKindManual
+		}
+		cached := p.CachedEntries
+		if cached == "" {
+			cached = "[]"
+		}
+		item := model.CFPool{
+			ID: p.ID, Name: p.Name, Kind: kind, URL: p.URL, RawText: p.RawText, UserAgent: p.UserAgent,
+			IntervalHours: p.IntervalHours, DefaultPort: p.DefaultPort, MaxEntries: p.MaxEntries, IPFilter: p.IPFilter,
+			CachedEntries: cached, EntryCount: p.EntryCount, Enabled: p.Enabled, CreatedTime: p.CreatedTime, UpdatedTime: now,
+		}
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"name", "kind", "url", "raw_text", "user_agent", "interval_hours",
+				"default_port", "max_entries", "ip_filter", "cached_entries", "entry_count", "enabled", "updated_time",
+			}),
+		}).Create(&item).Error; err != nil {
+			return 0, err
+		}
+	}
+
 	for _, i := range b.Inbounds {
 		listen := i.Listen
 		if listen == "" {
@@ -190,7 +226,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
 			CreatedTime: i.CreatedTime, UpdatedTime: now, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID,
-			SplitRules: i.SplitRules, OutboundIPStrategy: strategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID,
+			SplitRules: i.SplitRules, OutboundIPStrategy: strategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
@@ -199,7 +235,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 				"settings", "extra", "share_host", "share_address_mode", "remark", "relay_only", "accept_proxy_protocol",
 				"relay_whitelist", "whitelist_extra", "enabled", "upload_bytes", "download_bytes",
 				"inx", "updated_time", "source_id", "imported_name", "outbound_id", "split_rules", "outbound_ip_strategy", "tags",
-				"dialer_proxy_inbound_id",
+				"dialer_proxy_inbound_id", "cdn_config",
 			}),
 		}).Create(&item).Error; err != nil {
 			return 0, err

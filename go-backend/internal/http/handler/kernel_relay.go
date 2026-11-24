@@ -520,6 +520,7 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 	}
 	nodes := make(map[int64]*model.Node)
 	postQuantum := make(map[int64]bool)
+	poolEntries := h.loadCFPoolEntriesMap(rows)
 
 	var endpoints []kernel.Endpoint
 	var kinds []string
@@ -544,20 +545,27 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 		}
 		proxy := importedProxy(&row)
 		if row.RelayOnly != 1 && !isLoopbackListen(row.Listen) {
-			for _, entry := range inboundDirectShareEntries(&row, node) {
-				endpoints = append(endpoints, kernel.Endpoint{
-					InboundID:            row.ID,
-					DialerProxyInboundID: row.DialerProxyInboundID,
-					Name:                 entry.Name,
-					Host:                 entry.Host,
-					Port:                 row.Port,
-					Inbound:              in,
-					Direct:               true,
-					Proxy:                proxy,
-					SourceID:             row.SourceID,
-					PostQuantumReality:   pq,
-				})
-				kinds = append(kinds, "direct")
+			if cdn := rowCDNConfig(row); cdn != nil && cdn.Enabled {
+				for _, ep := range expandCDNEndpoints(row, in, *cdn, proxy, pq, poolEntries) {
+					endpoints = append(endpoints, ep)
+					kinds = append(kinds, "cdn")
+				}
+			} else {
+				for _, entry := range inboundDirectShareEntries(&row, node) {
+					endpoints = append(endpoints, kernel.Endpoint{
+						InboundID:            row.ID,
+						DialerProxyInboundID: row.DialerProxyInboundID,
+						Name:                 entry.Name,
+						Host:                 entry.Host,
+						Port:                 row.Port,
+						Inbound:              in,
+						Direct:               true,
+						Proxy:                proxy,
+						SourceID:             row.SourceID,
+						PostQuantumReality:   pq,
+					})
+					kinds = append(kinds, "direct")
+				}
 			}
 		}
 		for _, rel := range byInbound[row.ID] {
@@ -590,6 +598,99 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 		}
 	}
 	return endpoints, kinds
+}
+
+func (h *Handler) loadCFPoolEntriesMap(rows []model.NodeInbound) map[int64][]kernel.CFPoolEntry {
+	needed := false
+	for _, row := range rows {
+		if cdn := rowCDNConfig(row); cdn != nil && cdn.Enabled && cdn.PoolID > 0 {
+			needed = true
+			break
+		}
+	}
+	if !needed {
+		return nil
+	}
+	pools, err := h.repo.ListCFPools()
+	if err != nil {
+		return nil
+	}
+	out := make(map[int64][]kernel.CFPoolEntry, len(pools))
+	for i := range pools {
+		if pools[i].Enabled != 1 {
+			continue
+		}
+		out[pools[i].ID] = parseCachedCFEntries(pools[i].CachedEntries)
+	}
+	return out
+}
+
+func expandCDNEndpoints(row model.NodeInbound, in kernel.Inbound, cfg kernel.CDNConfig, proxy kernel.Proxy, pq bool, poolEntries map[int64][]kernel.CFPoolEntry) []kernel.Endpoint {
+	edgePort := cfg.EffectiveEdgePort(row.Port)
+	var merged []kernel.CFPoolEntry
+	seen := make(map[string]bool)
+	appendEntry := func(host string, port int, remark string) {
+		host = strings.Trim(strings.TrimSpace(host), "[]")
+		if host == "" {
+			return
+		}
+		if port <= 0 || port > 65535 {
+			port = edgePort
+		}
+		key := strings.ToLower(host) + ":" + strconv.Itoa(port)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		merged = append(merged, kernel.CFPoolEntry{Host: host, Port: port, Remark: strings.TrimSpace(remark)})
+	}
+
+	if cfg.PoolID > 0 {
+		for _, item := range poolEntries[cfg.PoolID] {
+			appendEntry(item.Host, item.Port, item.Remark)
+		}
+	}
+	if strings.TrimSpace(cfg.CustomEntries) != "" {
+		for _, item := range kernel.ParseCFEntries(cfg.CustomEntries, edgePort, "all", 50) {
+			appendEntry(item.Host, item.Port, item.Remark)
+		}
+	}
+
+	base := kernel.Endpoint{
+		InboundID:            row.ID,
+		DialerProxyInboundID: row.DialerProxyInboundID,
+		Port:                 row.Port,
+		Inbound:              in,
+		Direct:               true,
+		Proxy:                proxy,
+		SourceID:             row.SourceID,
+		PostQuantumReality:   pq,
+	}
+
+	out := make([]kernel.Endpoint, 0, len(merged)+1)
+	usedNames := make(map[string]int)
+	uniqueName := func(baseName string) string {
+		n := usedNames[baseName] + 1
+		usedNames[baseName] = n
+		if n == 1 {
+			return baseName
+		}
+		return fmt.Sprintf("%s #%d", baseName, n)
+	}
+
+	for idx, item := range merged {
+		name := fmt.Sprintf("%s · CF-%d", row.Name, idx+1)
+		if item.Remark != "" {
+			name = uniqueName(row.Name + " · " + item.Remark)
+		}
+		out = append(out, kernel.ApplyCDNToEndpoint(base, cfg, item.Host, item.Port, name))
+	}
+
+	originKey := strings.ToLower(cfg.Domain) + ":" + strconv.Itoa(edgePort)
+	if (cfg.KeepOriginHost || len(out) == 0) && !seen[originKey] {
+		out = append(out, kernel.ApplyCDNToEndpoint(base, cfg, cfg.Domain, edgePort, row.Name))
+	}
+	return out
 }
 
 func (h *Handler) inboundShare(w http.ResponseWriter, r *http.Request) {

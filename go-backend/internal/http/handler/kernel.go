@@ -135,6 +135,7 @@ type inboundView struct {
 	SplitRules         []kernel.SplitRule `json:"splitRules"`
 	OutboundIPStrategy string             `json:"outboundIpStrategy"`
 	Tags               []string           `json:"tags"`
+	CDN                *kernel.CDNConfig  `json:"cdn,omitempty"`
 }
 
 // kernelSecurityView hides the self-signed private material and DNS API
@@ -143,6 +144,7 @@ type kernelSecurityView struct {
 	kernel.Security
 	CertPEM       string `json:"certPem,omitempty"`
 	KeyPEM        string `json:"keyPem,omitempty"`
+	CertPEMSet    bool   `json:"certPemSet,omitempty"`
 	ACMEDNSKey    string `json:"acmeDnsKey,omitempty"`
 	ACMEDNSSecret string `json:"acmeDnsSecret,omitempty"`
 	ACMEDNSSet    bool   `json:"acmeDnsSet,omitempty"`
@@ -180,6 +182,7 @@ type inboundRequest struct {
 	SplitRules           *[]kernel.SplitRule     `json:"splitRules"`
 	Enabled              *bool                   `json:"enabled"`
 	Tags                 *[]string               `json:"tags,omitempty"`
+	CDN                  *kernel.CDNConfig       `json:"cdn,omitempty"`
 	DryRun               bool                    `json:"dryRun,omitempty"`
 
 	// Read-only /inbound/list view fields ignored on save so full items round-trip safely.
@@ -230,6 +233,29 @@ func unmarshalOptional(raw string, out interface{}) error {
 		return nil
 	}
 	return json.Unmarshal([]byte(raw), out)
+}
+
+func rowCDNConfig(row model.NodeInbound) *kernel.CDNConfig {
+	raw := strings.TrimSpace(row.CDNConfig)
+	if raw == "" {
+		return nil
+	}
+	var cfg kernel.CDNConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil
+	}
+	return &cfg
+}
+
+func encodeCDNConfig(cfg *kernel.CDNConfig) string {
+	if cfg == nil || !cfg.Enabled {
+		return ""
+	}
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func applyInboundToModel(in kernel.Inbound, row *model.NodeInbound) error {
@@ -628,7 +654,7 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			Network:            in.NetworkOn(k.KernelType),
 			Settings:           in.Settings,
 			Transport:          in.Transport,
-			Security:           kernelSecurityView{Security: in.Security, ACMEDNSSet: in.Security.ACMEDNSKey != ""},
+			Security:           kernelSecurityView{Security: in.Security, CertPEMSet: in.Security.CertPEM != "" && in.Security.KeyPEM != "", ACMEDNSSet: in.Security.ACMEDNSKey != ""},
 			Extra:              row.Extra,
 			ShareHost:          row.ShareHost,
 			ShareAddressMode:   inboundShareMode(&row),
@@ -649,6 +675,7 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			SplitRules:         rowSplitRules(row),
 			OutboundIPStrategy: row.OutboundIPStrategy,
 			Tags:               splitTags(row.Tags),
+			CDN:                rowCDNConfig(row),
 		}
 		v.ShareAddress = inboundShareAddress(&row, nodes[row.NodeID])
 		if v.SplitRules == nil {
@@ -758,6 +785,7 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		SplitRules           *[]kernel.SplitRule `json:"splitRules"`
 		Enabled              *bool               `json:"enabled"`
 		Tags                 *[]string           `json:"tags"`
+		CDN                  *kernel.CDNConfig   `json:"cdn"`
 		DryRun               bool                `json:"dryRun"`
 	}
 	if err := decodeJSON(r.Body, &req); err != nil || req.ID <= 0 {
@@ -772,7 +800,7 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 	if isExternalInbound(existing) {
 		if req.OutboundID != nil || req.SplitRules != nil || req.OutboundIPStrategy != nil ||
 			req.ShareAddressMode != nil || req.ShareHost != nil || req.AcceptProxyProtocol != nil ||
-			req.RelayWhitelist != nil || req.WhitelistExtra != nil {
+			req.RelayWhitelist != nil || req.WhitelistExtra != nil || req.CDN != nil {
 			response.WriteJSON(w, response.ErrDefault("外部导入节点仅支持修改 name/host/port/remark/relayOnly/dialerProxyInboundId/enabled/tags"))
 			return
 		}
@@ -805,6 +833,7 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		SplitRules:           req.SplitRules,
 		Enabled:              req.Enabled,
 		Tags:                 req.Tags,
+		CDN:                  req.CDN,
 		DryRun:               req.DryRun,
 	}
 	h.saveManagedInbound(w, *existing, k, full, true)
@@ -1063,9 +1092,38 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 		}
 		in.Port = p
 	}
+	cdn := rowCDNConfig(row)
+	if req.CDN != nil {
+		copyCDN := *req.CDN
+		cdn = &copyCDN
+	}
+	if cdn != nil && cdn.Enabled && in.Security.Type == kernel.SecurityTLS && strings.TrimSpace(in.Security.SNI) == "" && strings.TrimSpace(cdn.Domain) != "" {
+		in.Security.SNI = strings.TrimSpace(cdn.Domain)
+	}
 	if err := kernel.Normalize(k.KernelType, &in); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
+	}
+	if err := kernel.NormalizeCDNConfig(in, cdn); err != nil {
+		response.WriteJSON(w, response.ErrDefault(err.Error()))
+		return
+	}
+	if cdn != nil && cdn.Enabled {
+		if cdn.PoolID > 0 {
+			pool, err := h.repo.GetCFPool(cdn.PoolID)
+			if err != nil {
+				response.WriteJSON(w, response.Err(-2, err.Error()))
+				return
+			}
+			if pool == nil {
+				response.WriteJSON(w, response.ErrDefault("所选 CF 优选池不存在"))
+				return
+			}
+		}
+		if cdn.OnlyCFOrigin && strings.TrimSpace(node.NftError) != "" {
+			response.WriteJSON(w, response.ErrDefault("该服务器无法使用 Cloudflare 回源 IP 白名单："+node.NftError))
+			return
+		}
 	}
 	if in.Security.CertMode == kernel.CertModeACME && versionBelow(k.Version, 1, 14) {
 		response.WriteJSON(w, response.ErrDefault(fmt.Sprintf("自动申请证书需要 sing-box 1.14 及以上，服务器安装的是 %s", k.Version)))
@@ -1108,6 +1166,7 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 		response.WriteJSON(w, response.Err(-2, err.Error()))
 		return
 	}
+	row.CDNConfig = encodeCDNConfig(cdn)
 	row.Name = name
 	row.ShareHost = shareHostInput
 	if req.Remark != nil {
@@ -1684,7 +1743,8 @@ func (h *Handler) buildKernelApplyPayloadWithOverride(k *model.NodeKernel, realm
 		if lo, hi := in.HopRange(); lo > 0 {
 			port["hopFrom"], port["hopTo"] = lo, hi
 		}
-		if row.RelayWhitelist == 1 {
+		cdn := rowCDNConfig(row)
+		if row.RelayWhitelist == 1 || (cdn != nil && cdn.Enabled && cdn.OnlyCFOrigin) {
 			port["allow"] = h.inboundAllowList(row)
 		}
 		ports = append(ports, port)

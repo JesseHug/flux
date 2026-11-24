@@ -188,6 +188,7 @@ func (r *Repository) SaveNodeInbound(in *model.NodeInbound) error {
 		"outbound_ip_strategy":    in.OutboundIPStrategy,
 		"tags":                    in.Tags,
 		"dialer_proxy_inbound_id": in.DialerProxyInboundID,
+		"cdn_config":              in.CDNConfig,
 		"updated_time":            in.UpdatedTime,
 	}).Error
 }

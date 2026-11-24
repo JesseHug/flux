@@ -214,6 +214,7 @@ const (
 	DefaultFingerprint         = "chrome"
 	DefaultTLSCertMode         = CertModeSelf
 	CertModeSelf               = "self"
+	CertModePEM                = "pem"
 	CertModeFile               = "file"
 	CertModeACME               = "acme"
 	ACMEDNSCloudflare          = "cloudflare"
@@ -710,6 +711,16 @@ func normalizeSecurity(in *Inbound) error {
 					return fmt.Errorf("生成自签证书失败: %v", err)
 				}
 				sec.CertPEM, sec.KeyPEM = cert, key
+			}
+		case CertModePEM:
+			if sec.SNI == "" {
+				return errors.New("TLS 需要填写域名 (SNI)")
+			}
+			sec.CertFile, sec.KeyFile = "", ""
+			sec.CertPEM = strings.TrimSpace(sec.CertPEM)
+			sec.KeyPEM = strings.TrimSpace(sec.KeyPEM)
+			if err := ValidateKeyPairPEM(sec.CertPEM, sec.KeyPEM); err != nil {
+				return err
 			}
 		case CertModeFile:
 			sec.CertPEM, sec.KeyPEM = "", ""

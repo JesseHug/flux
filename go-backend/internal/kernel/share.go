@@ -41,6 +41,10 @@ type Endpoint struct {
 	DialerProxyInboundID int64
 	// DialerProxyTarget holds the bound or resolved relay node name/ID.
 	DialerProxyTarget string
+	// TrustedEdgeTLS marks endpoints terminated by a trusted CDN edge (such as
+	// Cloudflare Universal SSL) so clients verify the edge certificate even
+	// when the origin uses a self-signed certificate.
+	TrustedEdgeTLS bool
 }
 
 // hopRange is the port-hopping range clients may use for this endpoint.
@@ -62,6 +66,9 @@ const (
 )
 
 func (e Endpoint) selfSigned() bool {
+	if e.TrustedEdgeTLS {
+		return false
+	}
 	return e.Inbound.Security.Type == SecurityTLS && e.Inbound.Security.CertMode == CertModeSelf
 }
 

@@ -1,5 +1,6 @@
 import type { RemoteSourceItem } from "@/api";
 import type {
+  CFPoolApiItem,
   InboundApiItem,
   KernelApiItem,
   KernelCapabilitiesApiData,
@@ -16,6 +17,7 @@ import {
   batchDeleteInbounds,
   batchToggleInbounds,
   deleteInbound,
+  getCFPools,
   getInboundList,
   getKernelCapabilities,
   getKernelList,
@@ -51,6 +53,7 @@ import {
   ExternalEditModal,
   ImportModal,
 } from "@/pages/inbound/external";
+import { CFPoolsSection } from "@/pages/inbound/cf-pools";
 import { InboundFormModal } from "@/pages/inbound/inbound-form-modal";
 import { type NodeHubState } from "@/pages/node-hub";
 import { RelayModal } from "@/pages/inbound/relay-modal";
@@ -84,7 +87,7 @@ const modalBase = "!w-[calc(100%-32px)] !mx-auto sm:!w-full overflow-hidden";
 
 type ConfirmAction = "delete" | "regenerate" | "reset";
 
-type PageTab = "inbounds" | "sources";
+type PageTab = "inbounds" | "sources" | "cf-pools";
 
 const TAB_KEY = "flux_inbound_tab";
 
@@ -94,7 +97,7 @@ function usePageTab(): [PageTab, (t: PageTab) => void] {
     try {
       const v = getStoredValue(localStorage, TAB_KEY);
 
-      return v === "sources" ? v : "inbounds";
+      return v === "sources" || v === "cf-pools" ? v : "inbounds";
     } catch {
       return "inbounds";
     }
@@ -187,6 +190,15 @@ function detailRows(item: InboundApiItem): Array<[string, string]> {
   }
   if (sec.type === "tls" && sec.certMode === "self") {
     rows.push(["证书", "自签（客户端需允许不安全证书或固定证书）"]);
+  }
+  if (sec.type === "tls" && sec.certMode === "pem") {
+    rows.push(["证书", "自定义 PEM / CF Origin 证书"]);
+  }
+  if (item.cdn?.enabled) {
+    rows.push([
+      "CF CDN",
+      `${item.cdn.domain || sec.sni || ""}:${item.cdn.edgePort || item.port}`,
+    ]);
   }
   if (sec.type === "tls" && sec.certMode === "acme") {
     rows.push([
@@ -291,6 +303,11 @@ export default function InboundPage() {
     "sources",
     [],
   );
+  const [cfPools, setCfPools] = useCachedState<CFPoolApiItem[]>(
+    PAGE,
+    "cfPools",
+    [],
+  );
   const loadingRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const metadataLoadedAtRef = useRef(0);
@@ -311,18 +328,20 @@ export default function InboundPage() {
         // sources at most every thirty seconds.
         const metadata =
           !silent || Date.now() - metadataLoadedAtRef.current >= 30_000;
-        const [capsRes, nodeRes, kernelRes, inboundRes, sourceRes] =
+        const [capsRes, nodeRes, kernelRes, inboundRes, sourceRes, poolRes] =
           await Promise.all([
             metadata ? getKernelCapabilities() : null,
             metadata ? getNodeList() : null,
             metadata ? getKernelList() : null,
             getInboundList(),
             metadata ? getRemoteSources() : null,
+            metadata ? getCFPools() : null,
           ]);
 
         if (metadata) metadataLoadedAtRef.current = Date.now();
         if (capsRes?.code === 0) setCaps(capsRes.data);
         if (sourceRes?.code === 0) setSources(sourceRes.data ?? []);
+        if (poolRes?.code === 0) setCfPools(poolRes.data ?? []);
         if (nodeRes?.code === 0) setNodes(nodeRes.data || []);
         if (kernelRes?.code === 0) setKernels(kernelRes.data || []);
         if (inboundRes.code === 0) {
@@ -743,6 +762,16 @@ export default function InboundPage() {
             分流
           </Chip>
         )}
+        {item.cdn?.enabled && (
+          <Chip
+            className="shrink-0 whitespace-nowrap"
+            color="warning"
+            size="sm"
+            variant="flat"
+          >
+            CF CDN
+          </Chip>
+        )}
         {item.relayOnly && (
           <Chip className="shrink-0 whitespace-nowrap" size="sm" variant="flat">
             仅中转
@@ -861,6 +890,15 @@ export default function InboundPage() {
           sources.length || undefined
         ),
       },
+      {
+        key: "cf-pools",
+        label: "CF 优选池",
+        badge: cfPools.some((p) => p.lastError) ? (
+          <span className="text-danger">异常</span>
+        ) : (
+          cfPools.length || undefined
+        ),
+      },
     ];
 
   return (
@@ -876,6 +914,10 @@ export default function InboundPage() {
           sources={sources}
           onChanged={() => loadData(false)}
         />
+      )}
+
+      {tab === "cf-pools" && (
+        <CFPoolsSection pools={cfPools} onChanged={() => loadData(false)} />
       )}
 
       {tab === "inbounds" && (
@@ -1234,6 +1276,11 @@ export default function InboundPage() {
                   白名单
                 </Chip>
               )}
+              {sheetItem.cdn?.enabled && (
+                <Chip color="warning" size="sm" variant="flat">
+                  CF CDN
+                </Chip>
+              )}
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-default-500">流量</span>
@@ -1293,6 +1340,7 @@ export default function InboundPage() {
 
       <InboundFormModal
         caps={caps}
+        cfPools={cfPools}
         inbounds={inbounds}
         initial={formInitial}
         isOpen={formOpen}

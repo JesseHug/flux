@@ -750,6 +750,10 @@ export interface InboundSecurity {
   alpn?: string[];
   fingerprint?: string;
   certMode?: string;
+  certPem?: string;
+  keyPem?: string;
+  /** List output only: PEM certificate and key are stored on the server. */
+  certPemSet?: boolean;
   certFile?: string;
   keyFile?: string;
   realityDest?: string;
@@ -897,6 +901,63 @@ export interface InboundApiItem {
   splitRules: SplitRule[];
   /** The user's labels, for telling nodes apart in the list. */
   tags?: string[];
+  cdn?: InboundCDNConfig;
+}
+
+export interface InboundCDNConfig {
+  enabled: boolean;
+  domain?: string;
+  edgePort?: number;
+  edgeTls?: boolean;
+  poolId?: number;
+  customEntries?: string;
+  keepOriginHost?: boolean;
+  onlyCfOrigin?: boolean;
+}
+
+export interface CFPoolEntry {
+  host: string;
+  port: number;
+  remark?: string;
+}
+
+export interface CFPoolApiItem {
+  id: number;
+  name: string;
+  kind: "manual" | "url";
+  url: string;
+  rawText: string;
+  userAgent: string;
+  intervalHours: number;
+  defaultPort: number;
+  maxEntries: number;
+  ipFilter: "all" | "ipv4" | "ipv6" | "domain";
+  entries: CFPoolEntry[];
+  entryCount: number;
+  enabled: boolean;
+  lastFetch: number;
+  lastError: string;
+  createdTime: number;
+  updatedTime: number;
+}
+
+export interface CFPoolSavePayload {
+  id?: number;
+  name: string;
+  kind: "manual" | "url";
+  url?: string;
+  rawText?: string;
+  userAgent?: string;
+  intervalHours: number;
+  defaultPort: number;
+  maxEntries: number;
+  ipFilter: "all" | "ipv4" | "ipv6" | "domain";
+  enabled?: boolean;
+}
+
+export interface CFPoolParsePreviewResult {
+  entries: CFPoolEntry[];
+  count: number;
 }
 
 export interface InboundMutationPayload {
@@ -928,11 +989,12 @@ export interface InboundMutationPayload {
   dialerProxyInboundId?: number;
   splitRules: SplitRule[];
   enabled?: boolean;
+  cdn?: InboundCDNConfig;
 }
 
 export interface InboundShareEntry {
   name: string;
-  kind: "direct" | "relay";
+  kind: "direct" | "relay" | "cdn";
   host: string;
   port: number;
   uri: string;

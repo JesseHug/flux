@@ -191,6 +191,17 @@ async function answer(config: InternalAxiosRequestConfig) {
   if (bare === "api-token/list") {
     return { code: 0, msg: "操作成功", data: [], ts: Date.now() };
   }
+  if (bare === "cf-pool/list") {
+    return { code: 0, msg: "操作成功", data: [], ts: Date.now() };
+  }
+  if (bare === "cf-pool/parse-preview") {
+    return {
+      code: 0,
+      msg: "操作成功",
+      data: { entries: [], count: 0 },
+      ts: Date.now(),
+    };
+  }
   if (entries?.length && !write) {
     const hit = entries.find((e) => e.key === key) ?? entries[0];
 

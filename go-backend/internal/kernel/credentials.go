@@ -5,11 +5,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -185,6 +187,20 @@ func certMatchesName(certPEM, name string) bool {
 		return false
 	}
 	return cert.VerifyHostname(name) == nil && time.Now().Before(cert.NotAfter)
+}
+
+// ValidateKeyPairPEM verifies that certPEM and keyPEM are valid PEM blocks
+// whose public and private keys match.
+func ValidateKeyPairPEM(certPEM, keyPEM string) error {
+	certPEM = strings.TrimSpace(certPEM)
+	keyPEM = strings.TrimSpace(keyPEM)
+	if certPEM == "" || keyPEM == "" {
+		return errors.New("请填写 PEM 证书与私钥内容")
+	}
+	if _, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM)); err != nil {
+		return fmt.Errorf("PEM 证书或私钥格式无效或两者不匹配: %v", err)
+	}
+	return nil
 }
 
 // randomPort returns a port in [lo, hi).

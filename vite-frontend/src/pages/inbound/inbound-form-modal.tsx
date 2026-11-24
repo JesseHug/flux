@@ -1,4 +1,5 @@
 import type {
+  CFPoolApiItem,
   InboundApiItem,
   KernelApiItem,
   KernelCapabilitiesApiData,
@@ -51,6 +52,7 @@ interface Props {
   caps: KernelCapabilitiesApiData | null;
   nodes: NodeApiItem[];
   kernels: KernelApiItem[];
+  cfPools: CFPoolApiItem[];
   /** All inbounds, to confirm a save whose answer was lost. */
   inbounds: InboundApiItem[];
   initial: InboundForm;
@@ -95,6 +97,7 @@ export function InboundFormModal({
   caps,
   nodes,
   kernels,
+  cfPools,
   inbounds,
   initial,
   onSaved,
@@ -194,6 +197,16 @@ export function InboundFormModal({
   const pickSecurity = (secs: string[], current: string) =>
     secs.includes(current) ? current : (secs[0] ?? "none");
 
+  const supportsCdn = (protocol: string, transport: string, security: string) =>
+    ["vless", "vmess", "trojan"].includes(protocol) &&
+    ["ws", "grpc", "xhttp"].includes(transport) &&
+    (security === "tls" || security === "none");
+  const cdnSupported = supportsCdn(
+    form.protocol,
+    form.transportType,
+    form.securityType,
+  );
+
   const changeProtocol = (protocol: string) => {
     const cap = protocolCap(caps, form.kernelType, protocol);
     const transport = cap?.transports.some((t) => t.type === form.transportType)
@@ -204,6 +217,7 @@ export function InboundFormModal({
 
     setForm((prev) => {
       const security = pickSecurity(secs, prev.securityType);
+      const keepCdn = supportsCdn(protocol, transport, security);
 
       return {
         ...prev,
@@ -211,6 +225,7 @@ export function InboundFormModal({
         transportType: transport,
         securityType: security,
         sni: nextSni(prev.securityType, prev.sni, security),
+        cdnEnabled: keepCdn ? prev.cdnEnabled : false,
         name:
           prev.name.trim() && isAutoName(prev.name)
             ? (PROTOCOL_LABELS[protocol] ?? protocol)
@@ -225,22 +240,33 @@ export function InboundFormModal({
 
     setForm((prev) => {
       const security = pickSecurity(secs, prev.securityType);
+      const keepCdn = supportsCdn(prev.protocol, transportType, security);
 
       return {
         ...prev,
         transportType,
         securityType: security,
         sni: nextSni(prev.securityType, prev.sni, security),
+        cdnEnabled: keepCdn ? prev.cdnEnabled : false,
       };
     });
   };
 
   const changeSecurity = (securityType: string) => {
-    setForm((prev) => ({
-      ...prev,
-      securityType,
-      sni: nextSni(prev.securityType, prev.sni, securityType),
-    }));
+    setForm((prev) => {
+      const keepCdn = supportsCdn(
+        prev.protocol,
+        prev.transportType,
+        securityType,
+      );
+
+      return {
+        ...prev,
+        securityType,
+        sni: nextSni(prev.securityType, prev.sni, securityType),
+        cdnEnabled: keepCdn ? prev.cdnEnabled : false,
+      };
+    });
   };
 
   const validate = (): string | null => {
@@ -265,6 +291,7 @@ export function InboundFormModal({
     if (
       form.securityType === "tls" &&
       !form.sni.trim() &&
+      !(form.cdnEnabled && form.cdnDomain.trim()) &&
       !sniOptionalProtocols.includes(form.protocol)
     ) {
       return "TLS 需要填写域名";
@@ -301,6 +328,35 @@ export function InboundFormModal({
         return "请填写证书和私钥在服务器上的路径";
       }
     }
+    if (form.securityType === "tls" && certMode === "pem") {
+      const hasAny = form.certPem.trim() !== "" || form.keyPem.trim() !== "";
+      const hasBoth = form.certPem.trim() !== "" && form.keyPem.trim() !== "";
+
+      if (hasAny && !hasBoth) {
+        return "请同时填写 PEM 证书和私钥内容";
+      }
+      if ((!isEdit || !form.certPemSet) && !hasBoth) {
+        return "请粘贴 PEM 证书和私钥内容";
+      }
+    }
+    if (form.cdnEnabled) {
+      if (!cdnSupported) {
+        return "当前协议或传输方式不支持 Cloudflare CDN";
+      }
+      if (!form.cdnDomain.trim() && !form.sni.trim()) {
+        return "开启 Cloudflare CDN 需要填写已开启橙色云的域名";
+      }
+      if (form.cdnEdgePort.trim()) {
+        const edgePort = Number(form.cdnEdgePort);
+
+        if (!Number.isInteger(edgePort) || edgePort < 1 || edgePort > 65535) {
+          return "Cloudflare 边缘端口必须在 1-65535 之间";
+        }
+      }
+      if (form.cdnOnlyCfOrigin && selectedNode?.nftError) {
+        return `该服务器无法使用 Cloudflare 回源白名单：${selectedNode.nftError}`;
+      }
+    }
     if (form.extra.trim()) {
       try {
         const parsed = JSON.parse(form.extra);
@@ -330,6 +386,7 @@ export function InboundFormModal({
     try {
       const payload = toPayload({
         ...form,
+        sni: form.sni.trim() || (form.cdnEnabled ? form.cdnDomain.trim() : ""),
         certMode,
         snellVersion: form.snellVersion || defaultSnellVersion,
       });
@@ -454,7 +511,8 @@ export function InboundFormModal({
                         const isActive = (p: (typeof all)[number]) =>
                           form.protocol === p.protocol &&
                           form.transportType === p.transport &&
-                          form.securityType === p.security;
+                          form.securityType === p.security &&
+                          Boolean(p.cdnDefault) === form.cdnEnabled;
                         // Keep a chosen template in view even when folded.
                         const folded =
                           !showAllPresets &&
@@ -540,7 +598,19 @@ export function InboundFormModal({
                         }
                         value={form.sni}
                         variant="bordered"
-                        onChange={(e) => set("sni", e.target.value)}
+                        onChange={(e) => {
+                          const next = e.target.value;
+
+                          setForm((prev) => ({
+                            ...prev,
+                            sni: next,
+                            cdnDomain:
+                              prev.cdnEnabled &&
+                              (!prev.cdnDomain || prev.cdnDomain === prev.sni)
+                                ? next
+                                : prev.cdnDomain,
+                          }));
+                        }}
                       />
                       <Select
                         label="证书"
@@ -660,6 +730,39 @@ export function InboundFormModal({
                         />
                       </div>
                     )}
+                    {certMode === "pem" && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-default-500">
+                          可直接粘贴 Cloudflare 15 年源服务器证书（Origin
+                          Certificate）或任意受信任证书的 PEM
+                          文本，保存后直接随配置内联下发到节点，无需登录服务器放文件。
+                        </p>
+                        <Textarea
+                          label="证书内容 (PEM)"
+                          minRows={3}
+                          placeholder={
+                            isEdit && form.certPemSet
+                              ? "已保存证书，留空不修改"
+                              : "-----BEGIN CERTIFICATE-----"
+                          }
+                          value={form.certPem}
+                          variant="bordered"
+                          onChange={(e) => set("certPem", e.target.value)}
+                        />
+                        <Textarea
+                          label="私钥内容 (PEM)"
+                          minRows={3}
+                          placeholder={
+                            isEdit && form.certPemSet
+                              ? "已保存私钥，留空不修改"
+                              : "-----BEGIN PRIVATE KEY-----"
+                          }
+                          value={form.keyPem}
+                          variant="bordered"
+                          onChange={(e) => set("keyPem", e.target.value)}
+                        />
+                      </div>
+                    )}
                     {form.protocol !== "hysteria2" &&
                       form.protocol !== "tuic" && (
                         <Input
@@ -670,6 +773,182 @@ export function InboundFormModal({
                           onChange={(e) => set("alpn", e.target.value)}
                         />
                       )}
+                  </div>
+                )}
+
+                {cdnSupported && (
+                  <div className="space-y-3 rounded-lg border border-divider p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Cloudflare CDN / 优选加速
+                        </p>
+                        <p className="text-xs text-default-500">
+                          套 Cloudflare
+                          橙色云回源并结合优选池展开多条高速节点；服务端无需装额外程序
+                        </p>
+                      </div>
+                      <Switch
+                        isSelected={form.cdnEnabled}
+                        size="sm"
+                        onValueChange={(v) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            cdnEnabled: v,
+                            cdnDomain:
+                              v && !prev.cdnDomain ? prev.sni : prev.cdnDomain,
+                          }))
+                        }
+                      />
+                    </div>
+                    {form.cdnEnabled && (
+                      <div className="space-y-3 pt-1">
+                        <p className="rounded-md bg-warning/10 px-2.5 py-2 text-xs text-warning-700 dark:text-warning-400">
+                          合规与安全建议：请使用备用 Cloudflare
+                          账号与闲置域名并开启橙色云（自签证书在 CF 选
+                          Full，粘贴 Origin PEM 选 Full
+                          Strict）；建议配合分流屏蔽 BT
+                          流量，避免大流量拉流触发风控。
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <Input
+                            description="已解析到该服务器并点亮橙色云的域名"
+                            label="Cloudflare 域名"
+                            placeholder="cdn.example.com"
+                            value={form.cdnDomain}
+                            variant="bordered"
+                            onChange={(e) => {
+                              const next = e.target.value;
+
+                              setForm((prev) => ({
+                                ...prev,
+                                cdnDomain: next,
+                                sni:
+                                  prev.securityType === "tls" &&
+                                  (!prev.sni || prev.sni === prev.cdnDomain)
+                                    ? next
+                                    : prev.sni,
+                              }));
+                            }}
+                          />
+                          <Select
+                            label="绑定 CF 优选池"
+                            selectedKeys={[form.cdnPoolId || "0"]}
+                            onSelectionChange={(keys) => {
+                              const v = String(Array.from(keys)[0] ?? "0");
+
+                              set("cdnPoolId", v === "0" ? "" : v);
+                            }}
+                          >
+                            <SelectItem
+                              key="0"
+                              textValue="不绑定（仅自定义或原域名）"
+                            >
+                              不绑定（仅自定义或原域名）
+                            </SelectItem>
+                            {cfPools.map((p) => (
+                              <SelectItem
+                                key={String(p.id)}
+                                textValue={`${p.name}（${p.entryCount} 条）`}
+                              >
+                                {p.name}（{p.entryCount} 条
+                                {p.enabled ? "" : " · 已停用"}）
+                              </SelectItem>
+                            ))}
+                          </Select>
+                        </div>
+                        <Textarea
+                          description="可选，单入站补充优选 IP / 优选域名，每行一条（支持 IP:端口#备注）"
+                          label="额外自定义优选地址（可选）"
+                          minRows={2}
+                          placeholder={
+                            "104.16.132.229:443#自选\ncf.877774.xyz:443#优选域名"
+                          }
+                          value={form.cdnCustomEntries}
+                          variant="bordered"
+                          onChange={(e) =>
+                            set("cdnCustomEntries", e.target.value)
+                          }
+                        />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <Input
+                            description="NAT 机配合 Origin Rules 时填外部 443，留空自动"
+                            label="CF 边缘端口（可选）"
+                            placeholder="443 / 2053 / 8443"
+                            type="number"
+                            value={form.cdnEdgePort}
+                            variant="bordered"
+                            onChange={(e) => set("cdnEdgePort", e.target.value)}
+                          />
+                          <Select
+                            label="边缘 TLS"
+                            selectedKeys={[form.cdnEdgeTls]}
+                            onSelectionChange={(keys) =>
+                              set(
+                                "cdnEdgeTls",
+                                String(
+                                  Array.from(keys)[0] ?? "auto",
+                                ) as InboundForm["cdnEdgeTls"],
+                              )
+                            }
+                          >
+                            <SelectItem
+                              key="auto"
+                              textValue="自动（按边缘端口判断）"
+                            >
+                              自动（按边缘端口判断）
+                            </SelectItem>
+                            <SelectItem key="on" textValue="强制开启 TLS">
+                              强制开启 TLS
+                            </SelectItem>
+                            <SelectItem
+                              key="off"
+                              textValue="关闭 TLS（80/8080 明文）"
+                            >
+                              关闭 TLS（80/8080 明文）
+                            </SelectItem>
+                          </Select>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Switch
+                            isSelected={form.cdnKeepOriginHost}
+                            size="sm"
+                            onValueChange={(v) => set("cdnKeepOriginHost", v)}
+                          />
+                          <div>
+                            <p className="text-sm">保留原域名兜底节点</p>
+                            <p className="text-xs text-default-500">
+                              绑定优选池后仍保留一条直接连接 CF
+                              域名的节点用于兜底
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <Switch
+                            isDisabled={
+                              !!selectedNode?.nftError && !form.cdnOnlyCfOrigin
+                            }
+                            isSelected={form.cdnOnlyCfOrigin}
+                            size="sm"
+                            onValueChange={(v) => set("cdnOnlyCfOrigin", v)}
+                          />
+                          <div>
+                            <p className="text-sm">
+                              仅放行 Cloudflare 官方回源 IP（防扫保护）
+                            </p>
+                            <p className="text-xs text-default-500">
+                              下发 nftables 白名单，仅允许 Cloudflare
+                              官方回源网段访问该端口
+                            </p>
+                            {selectedNode?.nftError ? (
+                              <p className="text-xs text-danger mt-0.5">
+                                该服务器无法使用：{selectedNode.nftError}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

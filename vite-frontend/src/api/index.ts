@@ -1436,3 +1436,32 @@ export const revokeApiToken = (id: number) =>
 
 export const deleteApiToken = (id: number) =>
   Network.post("/api-token/delete", { id });
+
+export const getCFPools = () =>
+  Network.post<import("./types").CFPoolApiItem[]>("/cf-pool/list");
+
+export const saveCFPool = (data: import("./types").CFPoolSavePayload) =>
+  Network.post<import("./types").CFPoolApiItem>("/cf-pool/save", data, {
+    timeout: 60000,
+  });
+
+export const refreshCFPool = (id: number) =>
+  Network.post<import("./types").CFPoolApiItem>(
+    "/cf-pool/refresh",
+    { id },
+    { timeout: 60000 },
+  );
+
+export const deleteCFPool = (id: number, force = false) =>
+  Network.post("/cf-pool/delete", { id, force });
+
+export const previewCFPoolParse = (data: {
+  rawText: string;
+  defaultPort?: number;
+  maxEntries?: number;
+  ipFilter?: string;
+}) =>
+  Network.post<import("./types").CFPoolParsePreviewResult>(
+    "/cf-pool/parse-preview",
+    data,
+  );

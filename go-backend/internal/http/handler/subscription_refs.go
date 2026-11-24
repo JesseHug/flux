@@ -32,11 +32,19 @@ func (h *Handler) knownChainEndpointRefs() (map[string]bool, map[string]bool, er
 	}
 	activeNames := make(map[string]bool, len(rows)+len(relays))
 	activeIDs := make(map[string]bool, len(rows))
+	poolEntries := h.loadCFPoolEntriesMap(rows)
 	for _, row := range rows {
 		activeIDs[strconv.FormatInt(row.ID, 10)] = true
 		activeNames[row.Name] = true
 		if inboundShareMode(&row) == "dual" {
 			activeNames[row.Name+dualStackV6Suffix] = true
+		}
+		if cdn := rowCDNConfig(row); cdn != nil && cdn.Enabled {
+			if in, err := inboundFromModel(row); err == nil {
+				for _, ep := range expandCDNEndpoints(row, in, *cdn, nil, false, poolEntries) {
+					activeNames[ep.Name] = true
+				}
+			}
 		}
 	}
 	for _, rel := range relays {
@@ -267,6 +275,7 @@ func applyPrunePipeline(pipe *subPipeline, knownNames, knownIDs map[string]bool,
 
 func (h *Handler) collectInboundDeletedRefs(rows ...model.NodeInbound) ([]string, []int64) {
 	relays, _ := h.repo.ListInboundRelays(0)
+	poolEntries := h.loadCFPoolEntriesMap(rows)
 	var names []string
 	var ids []int64
 	byInbound := make(map[int64]bool, len(rows))
@@ -276,6 +285,13 @@ func (h *Handler) collectInboundDeletedRefs(rows ...model.NodeInbound) ([]string
 		names = append(names, r.Name)
 		if inboundShareMode(&r) == "dual" {
 			names = append(names, r.Name+dualStackV6Suffix)
+		}
+		if cdn := rowCDNConfig(r); cdn != nil && cdn.Enabled {
+			if in, err := inboundFromModel(r); err == nil {
+				for _, ep := range expandCDNEndpoints(r, in, *cdn, nil, false, poolEntries) {
+					names = append(names, ep.Name)
+				}
+			}
 		}
 	}
 	for _, rel := range relays {

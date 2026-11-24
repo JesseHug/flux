@@ -178,6 +178,8 @@ var apiTokenReadonlyRoutes = map[string]bool{
 	"/api/v1/inbound/share":                   true,
 	"/api/v1/inbound/sub/info":                true,
 	"/api/v1/inbound/relay/list":              true,
+	"/api/v1/cf-pool/list":                    true,
+	"/api/v1/cf-pool/parse-preview":           true,
 	"/api/v1/subscription/list":               true,
 	"/api/v1/subscription/traffic":            true,
 	"/api/v1/subscription/preview":            true,
@@ -263,6 +265,7 @@ func checkAPITokenRoutePolicy(path, scope string) string {
 		return "令牌权限不足"
 	}
 	if strings.HasPrefix(path, "/api/v1/inbound/") ||
+		strings.HasPrefix(path, "/api/v1/cf-pool/") ||
 		strings.HasPrefix(path, "/api/v1/subscription/") ||
 		strings.HasPrefix(path, "/api/v1/forward/") ||
 		apiTokenOperatorExtraRoutes[path] {
@@ -350,6 +353,7 @@ func requiresAdmin(path string) bool {
 	}
 
 	if strings.HasPrefix(path, "/api/v1/kernel/") || strings.HasPrefix(path, "/api/v1/inbound/") ||
+		strings.HasPrefix(path, "/api/v1/cf-pool/") ||
 		strings.HasPrefix(path, "/api/v1/notify/") || strings.HasPrefix(path, "/api/v1/subscription/") {
 		return true
 	}

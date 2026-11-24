@@ -4,6 +4,21 @@
 
 完整的提交记录见 [GitHub Releases](https://github.com/JesseHug/flux/releases)。
 
+## 3.6.3
+
+2026-11-24
+
+- **Cloudflare CDN 回源与零门槛一键预设**：
+  - 托管入站新增 `VLESS + WS + TLS (CF CDN)`、`VLESS + XHTTP + TLS (CF CDN)`、`VLESS + gRPC + TLS (CF CDN)` 三个一键预设，默认使用 Cloudflare 支持的非标 HTTPS 回源端口（`2053`/`8443`/`2083`）与自签证书（适配 CF `Full` 模式），填写域名即可自动联动 `Host`、`SNI` 与边缘端口（支持 Origin Rules 端口解耦）
+  - 客户端通过 Cloudflare 边缘连接时自动识别可信边缘 TLS，不再在 VLESS / Clash / sing-box / Surge / Loon / Quantumult X / Shadowrocket 导出配置中下发 `allowInsecure` / `skip-cert-verify`
+- **支持自定义 PEM 证书（Cloudflare Origin CA）**：`xray` 与 `sing-box` 入站新增 `pem` 证书模式，可直接粘贴 Cloudflare 15 年源服务器证书与私钥以配合 `Full (Strict)` 模式
+- **CF 优选池（手动粘贴 + 远程 URL 定时拉取）**：
+  - 在 **入站管理 → CF 优选池** 支持粘贴 `776771.xyz`、WeTest/HostMonit（含嵌套 JSON）、`CloudflareSpeedTest` CSV、IP:端口#备注与优选域名，并提供实时解析预览、IPv4/IPv6/域名过滤、数量上限控制及定时拉取失败保留旧缓存机制
+  - 入站绑定优选池后自动在分享与订阅中展开多条优选节点，支持强制解绑删除、订阅引用清理联动与完整备份导出/恢复
+- **一键仅允许 Cloudflare 回源白名单**：入站开启「仅允许 Cloudflare 回源」后，自动将 Cloudflare 官方 IPv4/IPv6 回源网段（24 小时缓存更新 + 内置兜底网段）写入节点 `nftables` 入站放行白名单，防止源站 IP 暴露后被直接扫描或绕过 CDN 访问
+- **受控 API Token 与文档更新**：开放 `/api/v1/cf-pool/*` 接口（`list`/`parse-preview` 支持 `readonly`，全套支持 `operator`），同步更新 `doc/guide/api-for-agent.md`
+- **升级**：只需升级面板
+
 ## 3.6.2
 
 2026-11-22

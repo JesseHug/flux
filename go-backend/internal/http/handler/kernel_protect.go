@@ -33,6 +33,11 @@ func (h *Handler) inboundAllowList(row model.NodeInbound) []string {
 			set[c] = true
 		}
 	}
+	if cdn := rowCDNConfig(row); cdn != nil && cdn.Enabled && cdn.OnlyCFOrigin {
+		for _, c := range h.cloudflareOriginCIDRs() {
+			set[c] = true
+		}
+	}
 
 	relays, err := h.repo.ListInboundRelays(row.ID)
 	if err != nil {

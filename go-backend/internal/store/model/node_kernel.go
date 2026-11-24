@@ -68,6 +68,8 @@ type NodeInbound struct {
 	// DialerProxyInboundID chains this landing node through a concrete relay inbound
 	// (NodeInbound.ID) in client subscriptions; 0 follows subscription policy.
 	DialerProxyInboundID int64 `gorm:"column:dialer_proxy_inbound_id;not null;default:0;index"`
+	// CDNConfig stores Cloudflare CDN origin & optimal IP pool settings as JSON.
+	CDNConfig string `gorm:"column:cdn_config;type:text;not null;default:''"`
 }
 
 func (NodeInbound) TableName() string { return "node_inbound" }

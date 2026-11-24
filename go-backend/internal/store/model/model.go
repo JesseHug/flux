@@ -446,6 +446,7 @@ type InboundsBackup struct {
 	Sources       []RemoteSourceBackup   `json:"sources,omitempty"`
 	Templates     []TemplateBackup       `json:"templates,omitempty"`
 	NodeGroups    []NodeGroupBackup      `json:"nodeGroups,omitempty"`
+	CFPools       []CFPoolBackup         `json:"cfPools,omitempty"`
 	// Users are shared users from 3.0.10 backups; imported as share
 	// subscriptions.
 	Users []SubUserBackup `json:"users,omitempty"`
@@ -546,6 +547,24 @@ type InboundBackup struct {
 	SplitRules           string `json:"splitRules,omitempty"`
 	Tags                 string `json:"tags,omitempty"`
 	DialerProxyInboundID int64  `json:"dialerProxyInboundId,omitempty"`
+	CDNConfig            string `json:"cdnConfig,omitempty"`
+}
+
+type CFPoolBackup struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Kind          string `json:"kind"`
+	URL           string `json:"url"`
+	RawText       string `json:"rawText"`
+	UserAgent     string `json:"userAgent,omitempty"`
+	IntervalHours int    `json:"intervalHours"`
+	DefaultPort   int    `json:"defaultPort"`
+	MaxEntries    int    `json:"maxEntries"`
+	IPFilter      string `json:"ipFilter"`
+	CachedEntries string `json:"cachedEntries,omitempty"`
+	EntryCount    int    `json:"entryCount"`
+	Enabled       int    `json:"enabled"`
+	CreatedTime   int64  `json:"createdTime"`
 }
 
 type TemplateBackup struct {
