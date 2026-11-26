@@ -58,6 +58,7 @@ export default function AdminLayout({
     null,
   );
   const isMobile = useMobileBreakpoint();
+  const collapsed = !isMobile && isCollapsed;
 
   // 菜单项配置：管理员按 线路 / 分发 / 系统 分组（用户页含分组和限速），普通用户保持原样
   const menuItems: MenuItem[] = [
@@ -269,16 +270,16 @@ export default function AdminLayout({
         className={`
         ${isMobile ? "fixed top-0 left-0 h-screen" : "relative h-full"}
         ${isMobile && !mobileMenuVisible ? "-translate-x-full" : "translate-x-0"}
-        ${isMobile ? "w-60" : isCollapsed ? "w-16" : "w-56"}
+        ${isMobile ? "w-60" : collapsed ? "w-16" : "w-56"}
         z-50 flex flex-shrink-0 flex-col border-r border-divider bg-background
         transition-[width,transform] duration-200`}
       >
         {/* Logo 区域 */}
         <div
-          className={`flex h-14 items-center overflow-hidden whitespace-nowrap ${isCollapsed ? "justify-center px-0" : "px-5"}`}
+          className={`flex h-14 items-center overflow-hidden whitespace-nowrap ${collapsed ? "justify-center px-0" : "px-5"}`}
         >
           <BrandLogo className="h-6 w-6 flex-shrink-0" size={24} />
-          {!isCollapsed && (
+          {!collapsed && (
             <span className="ml-2.5 truncate text-[15px] font-semibold text-foreground">
               {siteConfig.name}
             </span>
@@ -303,7 +304,7 @@ export default function AdminLayout({
                 <li key={item.path}>
                   {isAdmin &&
                     item.section &&
-                    (isCollapsed ? (
+                    (collapsed ? (
                       <div className="mx-2 my-2 border-t border-divider" />
                     ) : (
                       <div className="px-2 pb-1 pt-4 text-xs text-default-400">
@@ -313,13 +314,13 @@ export default function AdminLayout({
                   <button
                     aria-current={isActive ? "page" : undefined}
                     aria-disabled={isMonitorBlocked}
-                    className={`flex h-9 w-full items-center rounded-md text-left text-sm transition-colors ${isCollapsed ? "justify-center" : "gap-2.5 px-2"} ${
+                    className={`flex h-9 w-full items-center rounded-md text-left text-sm transition-colors ${collapsed ? "justify-center" : "gap-2.5 px-2"} ${
                       isActive
                         ? "bg-default-100 font-medium text-foreground"
                         : "text-default-500 hover:bg-default-50 hover:text-foreground"
                     } ${isMonitorBlocked ? "opacity-50" : ""}`}
                     title={
-                      isCollapsed
+                      collapsed
                         ? isMonitorBlocked
                           ? `${item.label} (无权限)`
                           : item.label
@@ -331,7 +332,7 @@ export default function AdminLayout({
                     <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
                       {item.icon}
                     </span>
-                    {!isCollapsed && (
+                    {!collapsed && (
                       <span className="truncate">{item.label}</span>
                     )}
                   </button>
@@ -361,19 +362,19 @@ export default function AdminLayout({
             ].map((a) => (
               <button
                 key={a.key}
-                className={`flex h-8 items-center rounded-md text-sm text-default-500 transition-colors hover:bg-default-50 hover:text-foreground ${isCollapsed ? "justify-center" : "gap-2.5 px-2"}`}
+                className={`flex h-8 items-center rounded-md text-sm text-default-500 transition-colors hover:bg-default-50 hover:text-foreground ${collapsed ? "justify-center" : "gap-2.5 px-2"}`}
                 title={a.label}
                 type="button"
                 onClick={a.onPress}
               >
                 <a.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                {!isCollapsed && <span>{a.label}</span>}
+                {!collapsed && <span>{a.label}</span>}
               </button>
             ))}
           <div
-            className={`mt-2 flex items-center ${isCollapsed ? "justify-center" : "justify-between gap-2 pl-2"}`}
+            className={`mt-2 flex items-center ${collapsed ? "flex-col gap-1" : "justify-between gap-2 pl-2"}`}
           >
-            {!isCollapsed && (
+            {!collapsed && (
               <VersionFooter
                 containerClassName="min-w-0"
                 poweredClassName="hidden"
@@ -384,12 +385,13 @@ export default function AdminLayout({
             )}
             {!isMobile && (
               <button
-                aria-label={isCollapsed ? "展开菜单" : "收起菜单"}
-                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-default-400 transition-colors hover:bg-default-50 hover:text-foreground"
+                aria-label={collapsed ? "展开菜单" : "收起菜单"}
+                className={`flex flex-shrink-0 items-center justify-center text-default-400 transition-colors hover:bg-default-50 hover:text-foreground ${collapsed ? "h-8 w-full rounded-md" : "h-7 w-7 rounded-md"}`}
+                title={collapsed ? "展开菜单" : "收起菜单"}
                 type="button"
                 onClick={toggleCollapse}
               >
-                {isCollapsed ? (
+                {collapsed ? (
                   <ChevronsRight className="h-4 w-4" />
                 ) : (
                   <ChevronsLeft className="h-4 w-4" />

@@ -70,9 +70,11 @@ export function PageHeader({
           )}
           {primary && (
             <Button
+              className="gap-1.5"
               color="primary"
               isDisabled={primary.disabled}
               size="sm"
+              startContent={primary.icon}
               onPress={primary.onPress}
             >
               {primary.label}
@@ -211,10 +213,11 @@ export function PageToolbar({
         )}
         {primary && (
           <Button
-            className="shrink-0"
+            className="shrink-0 gap-1.5"
             color="primary"
             isDisabled={primary.disabled}
             size="sm"
+            startContent={primary.icon}
             onPress={primary.onPress}
           >
             {primary.label}
