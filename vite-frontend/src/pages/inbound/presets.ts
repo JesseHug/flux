@@ -43,6 +43,80 @@ export const SECURITY_LABELS: Record<string, string> = {
   shadowtls: "ShadowTLS v3",
 };
 
+export const CF_HTTPS_PORTS = [443, 2053, 2083, 2087, 2096, 8443] as const;
+export const CF_HTTP_PORTS = [80, 8080, 8880, 2052, 2082, 2086, 2095] as const;
+export const CF_PROXY_PORTS: ReadonlySet<number> = new Set<number>([
+  ...CF_HTTPS_PORTS,
+  ...CF_HTTP_PORTS,
+]);
+
+export function isCFProxyPort(port: number): boolean {
+  return Number.isInteger(port) && CF_PROXY_PORTS.has(port);
+}
+
+/**
+ * Extract distinct ports referenced by cdnCustomEntries lines (supporting
+ * host:port#remark, [ipv6]:port#remark, "host port remark" / CSV, and bare
+ * hosts falling back to fallbackPort).
+ */
+export function extractCustomEntryPorts(
+  raw: string,
+  fallbackPort: number,
+): number[] {
+  const ports = new Set<number>();
+  const validPort = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
+  const fb = validPort(fallbackPort) ? fallbackPort : 443;
+
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const trimmed = rawLine.trim();
+
+    if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) {
+      continue;
+    }
+    const hashIdx = trimmed.indexOf("#");
+    const body = (hashIdx >= 0 ? trimmed.slice(0, hashIdx) : trimmed).trim();
+
+    if (!body) continue;
+
+    const bracketMatch = body.match(/^\[[^\]]+\](?::(\d+))?/);
+
+    if (bracketMatch) {
+      const p = bracketMatch[1] ? Number(bracketMatch[1]) : fb;
+
+      if (validPort(p)) ports.add(p);
+      continue;
+    }
+
+    const parts = body.split(/[\s,]+/).filter(Boolean);
+
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+      const p = Number(parts[1]);
+
+      if (validPort(p)) {
+        ports.add(p);
+        continue;
+      }
+    }
+
+    const first = parts[0] ?? body;
+    const firstColon = first.indexOf(":");
+    const lastColon = first.lastIndexOf(":");
+
+    if (firstColon > 0 && firstColon === lastColon) {
+      const p = Number(first.slice(lastColon + 1));
+
+      if (validPort(p)) {
+        ports.add(p);
+        continue;
+      }
+    }
+
+    ports.add(fb);
+  }
+
+  return Array.from(ports).sort((a, b) => a - b);
+}
+
 export const CERT_MODE_LABELS: Record<string, string> = {
   self: "自动生成自签证书",
   pem: "粘贴证书内容（PEM / CF Origin）",
@@ -217,19 +291,21 @@ export const PRESETS: Preset[] = [
   {
     key: "vless-ws-cf-cdn",
     label: "VLESS + WS + TLS（CF CDN）",
-    description: "套 Cloudflare 橙色云回源；填一个 CF 域名即可用",
+    description:
+      "套 Cloudflare 橙色云回源；默认 443 兼容所有 443 优选池且免配 Origin Rules（若 443 被占用再改端口并配 Origin Rules）",
     protocol: "vless",
     transport: "ws",
     security: "tls",
     needsDomain: true,
     certMode: "self",
     cdnDefault: true,
-    defaultPort: 2053,
+    defaultPort: 443,
   },
   {
     key: "vless-xhttp-cf-cdn",
     label: "VLESS + XHTTP + TLS（CF CDN）",
-    description: "XHTTP 走 CF 橙色云，吞吐更高（Xray + Mihomo）",
+    description:
+      "XHTTP 走 CF 橙色云，吞吐更高（Xray + Mihomo）；443 空闲推荐直连，免配 Origin Rules",
     kernel: "xray",
     protocol: "vless",
     transport: "xhttp",
@@ -237,19 +313,20 @@ export const PRESETS: Preset[] = [
     needsDomain: true,
     certMode: "self",
     cdnDefault: true,
-    defaultPort: 8443,
+    defaultPort: 443,
   },
   {
     key: "vless-grpc-cf-cdn",
     label: "VLESS + gRPC + TLS（CF CDN）",
-    description: "gRPC HTTP/2 多路复用，适配 CF Full / Full Strict",
+    description:
+      "gRPC HTTP/2 多路复用，适配 CF Full / Full Strict；443 空闲推荐直连，免配 Origin Rules",
     protocol: "vless",
     transport: "grpc",
     security: "tls",
     needsDomain: true,
     certMode: "self",
     cdnDefault: true,
-    defaultPort: 2083,
+    defaultPort: 443,
   },
   {
     key: "ss2022",
@@ -504,11 +581,7 @@ export function applyPreset(
     port: preset.defaultPort ? String(preset.defaultPort) : form.port,
     cdnEnabled: cdnDefault,
     cdnDomain: cdnDefault ? form.cdnDomain || sni : form.cdnDomain,
-    cdnEdgePort: cdnDefault
-      ? preset.defaultPort
-        ? String(preset.defaultPort)
-        : form.cdnEdgePort || "443"
-      : form.cdnEdgePort,
+    cdnEdgePort: cdnDefault ? "" : form.cdnEdgePort,
     cdnKeepOriginHost: cdnDefault ? true : form.cdnKeepOriginHost,
     name: isAutoName(form.name) ? preset.label : form.name,
   };

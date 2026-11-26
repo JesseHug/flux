@@ -6,19 +6,23 @@ import type {
   NodeApiItem,
 } from "@/api/types";
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
 import {
   ACME_DNS_LABELS,
   CERT_MODE_LABELS,
+  CF_HTTP_PORTS,
+  CF_HTTPS_PORTS,
   PROTOCOL_LABELS,
   SECURITY_LABELS,
   TRANSPORT_LABELS,
   type InboundForm,
   applyPreset,
+  extractCustomEntryPorts,
   isAutoName,
+  isCFProxyPort,
   passwordProtocols,
   presetsFor,
   protocolCap,
@@ -206,6 +210,96 @@ export function InboundFormModal({
     form.transportType,
     form.securityType,
   );
+
+  const cdnPortWarnings = useMemo(() => {
+    if (!cdnSupported || !form.cdnEnabled) return [];
+
+    const warnings: string[] = [];
+    const listenRaw = form.port.trim();
+    const listenPort = listenRaw ? Number(listenRaw) : 0;
+    const validListenPort =
+      Number.isInteger(listenPort) && listenPort >= 1 && listenPort <= 65535;
+    const edgeRaw = form.cdnEdgePort.trim();
+    const manualEdgePort = edgeRaw ? Number(edgeRaw) : 0;
+    const validManualEdge =
+      Number.isInteger(manualEdgePort) &&
+      manualEdgePort >= 1 &&
+      manualEdgePort <= 65535;
+    const effectiveEdgePort = validManualEdge
+      ? manualEdgePort
+      : validListenPort && isCFProxyPort(listenPort)
+        ? listenPort
+        : 443;
+    const domainLabel =
+      form.cdnDomain.trim() || form.sni.trim() || "该 CF 域名";
+
+    if (validListenPort && !isCFProxyPort(listenPort)) {
+      warnings.push(
+        `源站监听端口 ${listenPort} 不在 Cloudflare 支持的代理端口白名单内（HTTPS：${CF_HTTPS_PORTS.join("/")}；HTTP：${CF_HTTP_PORTS.join("/")}）。不能留空直连回源，必须在 Cloudflare 控制台为 ${domainLabel} 配置 Origin Rules（将边缘端口 ${effectiveEdgePort} 回源重写为 ${listenPort}），否则回源会直接报 521。`,
+      );
+    }
+
+    if (validManualEdge && validListenPort && manualEdgePort !== listenPort) {
+      warnings.push(
+        `CF 边缘端口（${manualEdgePort}）与源站监听端口（${listenPort}）不一致，需在 Cloudflare Origin Rules 中将 ${manualEdgePort} 回源重写为 ${listenPort}，否则原域名兜底节点及未写端口的自定义优选连接将报 521。`,
+      );
+    }
+
+    const poolAndCustomPorts = new Set<number>();
+    const selectedPool = form.cdnPoolId
+      ? cfPools.find((p) => String(p.id) === form.cdnPoolId)
+      : undefined;
+
+    if (selectedPool) {
+      const defPort =
+        selectedPool.defaultPort >= 1 && selectedPool.defaultPort <= 65535
+          ? selectedPool.defaultPort
+          : 443;
+
+      if ((selectedPool.entries ?? []).length > 0) {
+        for (const e of selectedPool.entries) {
+          if (e.port >= 1 && e.port <= 65535) {
+            poolAndCustomPorts.add(e.port);
+          }
+        }
+      }
+      poolAndCustomPorts.add(defPort);
+    }
+
+    if (form.cdnCustomEntries.trim()) {
+      for (const p of extractCustomEntryPorts(
+        form.cdnCustomEntries,
+        effectiveEdgePort,
+      )) {
+        poolAndCustomPorts.add(p);
+      }
+    }
+
+    const mismatchPorts = Array.from(poolAndCustomPorts)
+      .filter((p) => validListenPort && p !== listenPort)
+      .sort((a, b) => a - b);
+
+    if (mismatchPorts.length > 0) {
+      const poolPortText = mismatchPorts.join(" / ");
+      const primaryPort = mismatchPorts.includes(443) ? 443 : mismatchPorts[0];
+
+      warnings.push(
+        `当前入站监听端口为 ${listenPort}，但所选 CF 优选池/优选地址使用 ${poolPortText} 端口（通常为 443）。Cloudflare 默认会按 ${primaryPort} 回源到源站：请将源站端口改为 ${primaryPort}，或在 Cloudflare 控制台为 ${domainLabel} 配置 Origin Rules（将目标端口 ${primaryPort} 重写为 ${listenPort}），否则优选节点会报 521。`,
+      );
+    }
+
+    return warnings;
+  }, [
+    cdnSupported,
+    cfPools,
+    form.cdnCustomEntries,
+    form.cdnDomain,
+    form.cdnEdgePort,
+    form.cdnEnabled,
+    form.cdnPoolId,
+    form.port,
+    form.sni,
+  ]);
 
   const changeProtocol = (protocol: string) => {
     const cap = protocolCap(caps, form.kernelType, protocol);
@@ -569,6 +663,11 @@ export function InboundFormModal({
                     onChange={(e) => set("name", e.target.value)}
                   />
                   <Input
+                    description={
+                      form.cdnEnabled
+                        ? "独立主机 443 未被占用时推荐直接用 443，兼容所有 443 优选池且免配 Origin Rules"
+                        : undefined
+                    }
                     label="端口"
                     placeholder="留空随机"
                     type="number"
@@ -810,6 +909,30 @@ export function InboundFormModal({
                           Strict）；建议配合分流屏蔽 BT
                           流量，避免大流量拉流触发风控。
                         </p>
+                        {cdnPortWarnings.length > 0 && (
+                          <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs text-warning-700 dark:text-warning-300 space-y-1.5">
+                            <div className="flex items-start gap-2">
+                              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                              <div className="space-y-1">
+                                <p className="font-semibold">
+                                  端口不一致 / Origin Rules
+                                  风险提示（不阻断保存）
+                                </p>
+                                <p className="text-warning-700/90 dark:text-warning-300/90">
+                                  核心原理：Cloudflare
+                                  默认按客户端连接的边缘端口（以及优选池使用的端口）以相同端口回源到源站；不一致时必须在
+                                  Cloudflare Origin Rules 配置端口重写，否则会报
+                                  521。
+                                </p>
+                                <ul className="list-disc pl-4 space-y-1">
+                                  {cdnPortWarnings.map((msg, idx) => (
+                                    <li key={idx}>{msg}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Input
                             description="已解析到该服务器并点亮橙色云的域名"
@@ -872,7 +995,7 @@ export function InboundFormModal({
                         />
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <Input
-                            description="NAT 机配合 Origin Rules 时填外部 443，留空自动"
+                            description="仅用于原域名兜底节点（keepOriginHost）及未写端口的自定义优选条目，不影响已绑定优选池自带/默认端口（一般为 443）；留空自动"
                             label="CF 边缘端口（可选）"
                             placeholder="443 / 2053 / 8443"
                             type="number"
