@@ -64,7 +64,7 @@ export function switchDemoRole(role: DemoRole) {
  * last path segment tells them apart ("latest-results" is a read).
  */
 const WRITE_WORDS = new Set(
-  "create save update delete remove assign reset toggle import install control regenerate pause resume redeploy batch force run refresh split rollback test dismiss restore export reconcile clear login register finish begin verify revoke prune".split(
+  "create save update delete remove assign reset toggle import install control regenerate pause resume redeploy batch force run refresh split rollback test dismiss restore export reconcile clear login register finish begin verify revoke prune order".split(
     " ",
   ),
 );
