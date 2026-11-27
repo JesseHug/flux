@@ -767,6 +767,18 @@ export default function InboundPage() {
             {item.defaultBlock ? "仅分流放行" : "分流"}
           </Chip>
         )}
+        {(item.rateUpMbps || item.rateDownMbps) && (
+          <Chip className="shrink-0 whitespace-nowrap" size="sm" variant="flat">
+            限速{" "}
+            {[
+              item.rateDownMbps ? `↓${item.rateDownMbps}` : "",
+              item.rateUpMbps ? `↑${item.rateUpMbps}` : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}{" "}
+            Mbps
+          </Chip>
+        )}
         {item.cdn?.enabled && (
           <Chip
             className="shrink-0 whitespace-nowrap"
@@ -1285,6 +1297,18 @@ export default function InboundPage() {
               {sheetItem.cdn?.enabled && (
                 <Chip color="warning" size="sm" variant="flat">
                   CF CDN
+                </Chip>
+              )}
+              {(sheetItem.rateUpMbps || sheetItem.rateDownMbps) && (
+                <Chip size="sm" variant="flat">
+                  限速{" "}
+                  {[
+                    sheetItem.rateDownMbps ? `↓${sheetItem.rateDownMbps}` : "",
+                    sheetItem.rateUpMbps ? `↑${sheetItem.rateUpMbps}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}{" "}
+                  Mbps
                 </Chip>
               )}
             </div>

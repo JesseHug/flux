@@ -28,6 +28,7 @@ import {
   protocolCap,
   REALITY_RECOMMENDED_DOMAINS,
   sniOptionalProtocols,
+  ssSubscriptionUsersAllowed,
   toPayload,
   usernameProtocols,
   uuidProtocols,
@@ -117,6 +118,19 @@ export function InboundFormModal({
   const [showAllPresets, setShowAllPresets] = useState(false);
   const isEdit = Boolean(initial.id);
   const selectedNode = nodes.find((node) => String(node.id) === form.nodeId);
+  const rateConfigured =
+    Boolean(Number(form.rateUpMbps)) || Boolean(Number(form.rateDownMbps));
+  const agentBelowRateMin = (() => {
+    const v = selectedNode?.version?.trim().split(/\s+/)[0]?.replace(/^v/i, "");
+
+    if (!v) return false;
+    const parts = v.split(".").map(Number);
+
+    if (parts.length < 3 || parts.slice(0, 3).some(Number.isNaN)) return false;
+    const [maj, min, pat] = parts;
+
+    return maj < 3 || (maj === 3 && (min < 6 || (min === 6 && pat < 4)));
+  })();
   const shareV4 = nodeFamilyIP(selectedNode, false);
   const shareV6 = nodeFamilyIP(selectedNode, true);
 
@@ -177,6 +191,7 @@ export function InboundFormModal({
       const next: InboundForm = {
         ...prev,
         kernelType,
+        ssSubscriptionUsers: kernelType === "xray" && prev.ssSubscriptionUsers,
         outboundIpStrategy:
           kernelType === "xray" || kernelType === "singbox"
             ? prev.outboundIpStrategy
@@ -316,6 +331,8 @@ export function InboundFormModal({
       return {
         ...prev,
         protocol,
+        ssSubscriptionUsers:
+          protocol === "shadowsocks" && prev.ssSubscriptionUsers,
         transportType: transport,
         securityType: security,
         sni: nextSni(prev.securityType, prev.sni, security),
@@ -1087,7 +1104,7 @@ export function InboundFormModal({
                   高级设置
                   {!showAdvanced && (
                     <span className="hidden text-xs text-default-400 sm:inline">
-                      （协议、传输、UUID、密钥、监听与中转；留空自动生成）
+                      （协议、传输、UUID、密钥、监听、限速与中转；留空自动生成）
                     </span>
                   )}
                 </button>
@@ -1191,11 +1208,22 @@ export function InboundFormModal({
                         label="加密方式"
                         selectedKeys={[form.method]}
                         onSelectionChange={(keys) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            method: String(Array.from(keys)[0] ?? prev.method),
-                            password: "",
-                          }))
+                          setForm((prev) => {
+                            const next = {
+                              ...prev,
+                              method: String(
+                                Array.from(keys)[0] ?? prev.method,
+                              ),
+                              password: "",
+                            };
+
+                            return {
+                              ...next,
+                              ssSubscriptionUsers:
+                                ssSubscriptionUsersAllowed(next) &&
+                                prev.ssSubscriptionUsers,
+                            };
+                          })
                         }
                       >
                         {(caps?.ssMethods ?? []).map((m) => (
@@ -1214,21 +1242,38 @@ export function InboundFormModal({
                         onChange={(e) => set("username", e.target.value)}
                       />
                     )}
-                    {passwordProtocols.includes(form.protocol) && (
-                      <Input
-                        description={
-                          form.protocol === "shadowsocks" &&
-                          form.method.startsWith("2022-")
-                            ? "SS2022 需要 base64 密钥，建议留空自动生成"
-                            : undefined
-                        }
-                        label={form.protocol === "snell" ? "PSK" : "密码"}
-                        placeholder="留空自动生成"
-                        value={form.password}
-                        variant="bordered"
-                        onChange={(e) => set("password", e.target.value)}
-                      />
+                    {ssSubscriptionUsersAllowed(form) && (
+                      <div className="space-y-1.5">
+                        <Switch
+                          isSelected={form.ssSubscriptionUsers}
+                          size="sm"
+                          onValueChange={(v) => set("ssSubscriptionUsers", v)}
+                        >
+                          每个订阅使用独立密码
+                        </Switch>
+                        <p className="text-xs text-default-500">
+                          同一端口按分发订阅统计流量、执行额度。开启后旧共享密码失效，客户端需刷新订阅。
+                          {form.method.startsWith("2022-") &&
+                            " 客户端必须支持 SS2022 多用户密钥。"}
+                        </p>
+                      </div>
                     )}
+                    {passwordProtocols.includes(form.protocol) &&
+                      !form.ssSubscriptionUsers && (
+                        <Input
+                          description={
+                            form.protocol === "shadowsocks" &&
+                            form.method.startsWith("2022-")
+                              ? "SS2022 需要 base64 密钥，建议留空自动生成"
+                              : undefined
+                          }
+                          label={form.protocol === "snell" ? "PSK" : "密码"}
+                          placeholder="留空自动生成"
+                          value={form.password}
+                          variant="bordered"
+                          onChange={(e) => set("password", e.target.value)}
+                        />
+                      )}
 
                     {form.protocol === "snell" && (
                       <Select
@@ -1703,6 +1748,49 @@ export function InboundFormModal({
                             Sub-Store 兼容及直绑输出）
                           </p>
                         </div>
+                      </div>
+                      <div className="space-y-2 border-t border-divider pt-3">
+                        <p className="text-sm font-medium">
+                          端口总限速（Mbps）
+                        </p>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <Input
+                            description="入站总下载上限（服务器发出），留空或 0 为不限"
+                            inputMode="numeric"
+                            label="下载限速 (Mbps)"
+                            placeholder="不限"
+                            value={form.rateDownMbps}
+                            variant="bordered"
+                            onChange={(e) =>
+                              set("rateDownMbps", e.target.value)
+                            }
+                          />
+                          <Input
+                            description="入站总上传上限（服务器接收），留空或 0 为不限"
+                            inputMode="numeric"
+                            label="上传限速 (Mbps)"
+                            placeholder="不限"
+                            value={form.rateUpMbps}
+                            variant="bordered"
+                            onChange={(e) => set("rateUpMbps", e.target.value)}
+                          />
+                        </div>
+                        <p className="text-xs text-default-500">
+                          通过 nftables
+                          限制该入站端口的总带宽（包含中转进入的流量）；需要服务器安装
+                          nftables 及 agent 3.6.4 以上。
+                        </p>
+                        {rateConfigured && selectedNode?.nftError && (
+                          <p className="text-xs text-danger">
+                            该服务器无法使用限速：{selectedNode.nftError}
+                          </p>
+                        )}
+                        {rateConfigured && agentBelowRateMin && (
+                          <p className="text-xs text-danger">
+                            限速需要服务器 agent 3.6.4 或更新，当前为{" "}
+                            {selectedNode?.version}，请先升级 agent
+                          </p>
+                        )}
                       </div>
                       <Input
                         label="备注"

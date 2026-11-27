@@ -65,7 +65,11 @@ type NodeInbound struct {
 	// DefaultBlock drops what no 分流 rule matched instead of sending it
 	// out directly (OutboundID is then 0): a node that only reaches some
 	// sites.
-	DefaultBlock       int    `gorm:"column:default_block;not null;default:0"`
+	DefaultBlock int `gorm:"column:default_block;not null;default:0"`
+	// RateUpMbps / RateDownMbps cap total inbound throughput on the agent
+	// port via nftables (0 = unlimited).
+	RateUpMbps         int    `gorm:"column:rate_up_mbps;not null;default:0"`
+	RateDownMbps       int    `gorm:"column:rate_down_mbps;not null;default:0"`
 	OutboundIPStrategy string `gorm:"column:outbound_ip_strategy;type:varchar(20);not null;default:'auto'"`
 	// Tags are the user's labels (comma-separated), for telling nodes apart
 	// in the list; they do not affect rendering or subscriptions.
@@ -78,6 +82,9 @@ type NodeInbound struct {
 }
 
 func (NodeInbound) TableName() string { return "node_inbound" }
+
+// MaxInboundRateMbps is the maximum inbound bandwidth limit accepted (100 Gbit/s).
+const MaxInboundRateMbps = 100000
 
 // RemoteSource is a subscription URL (an airport, a friend's panel) whose
 // nodes are kept as imported nodes and refreshed periodically.

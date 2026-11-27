@@ -10,6 +10,7 @@ export interface NodeApiItem {
   notifyEvents?: NodeNotifyEvents;
   /** Why the agent cannot use nftables (no permission, not installed). */
   nftError?: string;
+  version?: string;
   remark?: string;
   expiryTime?: number;
   renewalCycle?: "month" | "quarter" | "year" | "";
@@ -719,6 +720,7 @@ export interface InboundSettings {
   flow?: string;
   password?: string;
   method?: string;
+  ssSubscriptionUsers?: boolean;
   snellVersion?: number;
   /** Snell v6 traffic shaping: unset (default) or "unshaped". */
   snellMode?: string;
@@ -901,6 +903,8 @@ export interface InboundApiItem {
   splitRules: SplitRule[];
   /** The default exit is 阻断: only what a 分流 rule sends elsewhere gets out. */
   defaultBlock?: boolean;
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   /** The user's labels, for telling nodes apart in the list. */
   tags?: string[];
   cdn?: InboundCDNConfig;
@@ -990,6 +994,9 @@ export interface InboundMutationPayload {
   outboundId: number;
   dialerProxyInboundId?: number;
   splitRules: SplitRule[];
+  defaultBlock?: boolean;
+  rateUpMbps?: number;
+  rateDownMbps?: number;
   enabled?: boolean;
   cdn?: InboundCDNConfig;
 }

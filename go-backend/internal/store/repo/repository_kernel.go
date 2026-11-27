@@ -190,6 +190,8 @@ func (r *Repository) SaveNodeInbound(in *model.NodeInbound) error {
 		"outbound_id":             in.OutboundID,
 		"split_rules":             in.SplitRules,
 		"default_block":           in.DefaultBlock,
+		"rate_up_mbps":            in.RateUpMbps,
+		"rate_down_mbps":          in.RateDownMbps,
 		"outbound_ip_strategy":    in.OutboundIPStrategy,
 		"tags":                    in.Tags,
 		"dialer_proxy_inbound_id": in.DialerProxyInboundID,

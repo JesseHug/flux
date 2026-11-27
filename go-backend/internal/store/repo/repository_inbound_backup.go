@@ -37,7 +37,7 @@ func (r *Repository) exportInbounds() (*model.InboundsBackup, error) {
 			RelayOnly: i.RelayOnly, AcceptProxyProtocol: i.AcceptProxyProtocol,
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
-			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, DefaultBlock: i.DefaultBlock, OutboundIPStrategy: i.OutboundIPStrategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
+			CreatedTime: i.CreatedTime, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID, SplitRules: i.SplitRules, DefaultBlock: i.DefaultBlock, RateUpMbps: i.RateUpMbps, RateDownMbps: i.RateDownMbps, OutboundIPStrategy: i.OutboundIPStrategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
 		})
 	}
 
@@ -226,7 +226,8 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 			RelayWhitelist: i.RelayWhitelist, WhitelistExtra: i.WhitelistExtra, Enabled: i.Enabled,
 			UploadBytes: i.UploadBytes, DownloadBytes: i.DownloadBytes, Inx: i.Inx,
 			CreatedTime: i.CreatedTime, UpdatedTime: now, SourceID: i.SourceID, ImportedName: i.ImportedName, OutboundID: i.OutboundID,
-			SplitRules: i.SplitRules, DefaultBlock: i.DefaultBlock, OutboundIPStrategy: strategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
+			SplitRules: i.SplitRules, DefaultBlock: i.DefaultBlock, RateUpMbps: clampRateMbps(i.RateUpMbps), RateDownMbps: clampRateMbps(i.RateDownMbps),
+			OutboundIPStrategy: strategy, Tags: i.Tags, DialerProxyInboundID: i.DialerProxyInboundID, CDNConfig: i.CDNConfig,
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
@@ -234,7 +235,7 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 				"kernel_id", "node_id", "name", "protocol", "listen", "port", "transport", "security",
 				"settings", "extra", "share_host", "share_address_mode", "remark", "relay_only", "accept_proxy_protocol",
 				"relay_whitelist", "whitelist_extra", "enabled", "upload_bytes", "download_bytes",
-				"inx", "updated_time", "source_id", "imported_name", "outbound_id", "split_rules", "default_block", "outbound_ip_strategy", "tags",
+				"inx", "updated_time", "source_id", "imported_name", "outbound_id", "split_rules", "default_block", "rate_up_mbps", "rate_down_mbps", "outbound_ip_strategy", "tags",
 				"dialer_proxy_inbound_id", "cdn_config",
 			}),
 		}).Create(&item).Error; err != nil {
@@ -328,4 +329,14 @@ func importInbounds(tx *gorm.DB, b *model.InboundsBackup, now int64) (int, error
 		}
 	}
 	return len(b.Inbounds), nil
+}
+
+func clampRateMbps(rate int) int {
+	if rate <= 0 {
+		return 0
+	}
+	if rate > model.MaxInboundRateMbps {
+		return model.MaxInboundRateMbps
+	}
+	return rate
 }

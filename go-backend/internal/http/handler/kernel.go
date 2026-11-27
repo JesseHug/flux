@@ -134,7 +134,10 @@ type inboundView struct {
 	// SplitRules are the inbound's 分流 rules.
 	SplitRules []kernel.SplitRule `json:"splitRules"`
 	// DefaultBlock: what no 分流 rule matched is dropped.
-	DefaultBlock       bool              `json:"defaultBlock"`
+	DefaultBlock bool `json:"defaultBlock"`
+	// RateUpMbps / RateDownMbps: the inbound's speed limits, 0 = none.
+	RateUpMbps         int               `json:"rateUpMbps"`
+	RateDownMbps       int               `json:"rateDownMbps"`
 	OutboundIPStrategy string            `json:"outboundIpStrategy"`
 	Tags               []string          `json:"tags"`
 	CDN                *kernel.CDNConfig `json:"cdn,omitempty"`
@@ -183,6 +186,8 @@ type inboundRequest struct {
 	DialerProxyInboundID *int64                  `json:"dialerProxyInboundId"`
 	SplitRules           *[]kernel.SplitRule     `json:"splitRules"`
 	DefaultBlock         *bool                   `json:"defaultBlock"`
+	RateUpMbps           *int                    `json:"rateUpMbps"`
+	RateDownMbps         *int                    `json:"rateDownMbps"`
 	Enabled              *bool                   `json:"enabled"`
 	Tags                 *[]string               `json:"tags,omitempty"`
 	CDN                  *kernel.CDNConfig       `json:"cdn,omitempty"`
@@ -677,6 +682,8 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			OutboundID:         row.OutboundID,
 			SplitRules:         rowSplitRules(row),
 			DefaultBlock:       row.DefaultBlock == 1,
+			RateUpMbps:         row.RateUpMbps,
+			RateDownMbps:       row.RateDownMbps,
 			OutboundIPStrategy: row.OutboundIPStrategy,
 			Tags:               splitTags(row.Tags),
 			CDN:                rowCDNConfig(row),
@@ -788,6 +795,8 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		WhitelistExtra       *string             `json:"whitelistExtra"`
 		SplitRules           *[]kernel.SplitRule `json:"splitRules"`
 		DefaultBlock         *bool               `json:"defaultBlock"`
+		RateUpMbps           *int                `json:"rateUpMbps"`
+		RateDownMbps         *int                `json:"rateDownMbps"`
 		Enabled              *bool               `json:"enabled"`
 		Tags                 *[]string           `json:"tags"`
 		CDN                  *kernel.CDNConfig   `json:"cdn"`
@@ -805,7 +814,8 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 	if isExternalInbound(existing) {
 		if req.OutboundID != nil || req.SplitRules != nil || req.OutboundIPStrategy != nil ||
 			req.ShareAddressMode != nil || req.ShareHost != nil || req.AcceptProxyProtocol != nil ||
-			req.RelayWhitelist != nil || req.WhitelistExtra != nil || req.CDN != nil {
+			req.RelayWhitelist != nil || req.WhitelistExtra != nil || req.CDN != nil ||
+			req.RateUpMbps != nil || req.RateDownMbps != nil {
 			response.WriteJSON(w, response.ErrDefault("外部导入节点仅支持修改 name/host/port/remark/relayOnly/dialerProxyInboundId/enabled/tags"))
 			return
 		}
@@ -837,6 +847,8 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		WhitelistExtra:       req.WhitelistExtra,
 		SplitRules:           req.SplitRules,
 		DefaultBlock:         req.DefaultBlock,
+		RateUpMbps:           req.RateUpMbps,
+		RateDownMbps:         req.RateDownMbps,
 		Enabled:              req.Enabled,
 		Tags:                 req.Tags,
 		CDN:                  req.CDN,
@@ -1012,6 +1024,20 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 		response.WriteJSON(w, response.ErrDefault("该服务器无法使用入站白名单："+node.NftError))
 		return
 	}
+	if req.RateUpMbps != nil || req.RateDownMbps != nil {
+		up, down := row.RateUpMbps, row.RateDownMbps
+		if req.RateUpMbps != nil {
+			up = *req.RateUpMbps
+		}
+		if req.RateDownMbps != nil {
+			down = *req.RateDownMbps
+		}
+		if err := validateInboundRates(node, up, down); err != nil {
+			response.WriteJSON(w, response.ErrDefault(err.Error()))
+			return
+		}
+		row.RateUpMbps, row.RateDownMbps = up, down
+	}
 	row.ShareAddressMode = mode
 	if mode != "custom" {
 		shareHostInput = ""
@@ -1032,6 +1058,21 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 	settings := old.Settings
 	if req.Settings != nil {
 		settings = *req.Settings
+		if update && old.Protocol == kernel.ProtocolShadowsocks && kernel.SS2022KeyLen(old.Settings.Method) > 0 {
+			method := strings.TrimSpace(settings.Method)
+			if method == "" {
+				method = kernel.DefaultSSMethod
+			}
+			wasMetered := old.Settings.SSSubscriptionUsers
+			isMetered := settings.SSSubscriptionUsers && kernel.SS2022KeyLen(method) > 0 &&
+				strings.EqualFold(strings.TrimSpace(protocol), kernel.ProtocolShadowsocks)
+			switch {
+			case wasMetered && isMetered && method == old.Settings.Method && strings.TrimSpace(settings.Password) == "":
+				settings.Password = old.Settings.Password
+			case wasMetered != isMetered && strings.TrimSpace(settings.Password) == old.Settings.Password:
+				settings.Password = ""
+			}
+		}
 	}
 	transport := old.Transport
 	if req.Transport != nil {
@@ -1109,6 +1150,18 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 	if err := kernel.Normalize(k.KernelType, &in); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
+	}
+	if in.Settings.SSSubscriptionUsers {
+		if !meteredSSAllowed(node, k.KernelType) {
+			response.WriteJSON(w, response.ErrDefault("SS 订阅独立密码需要服务器支持 nftables 或 Xray StatsService 流量计数："+node.NftError))
+			return
+		}
+		if update {
+			if msg := h.chainInUseMessage(&row); msg != "" {
+				response.WriteJSON(w, response.ErrDefault(msg))
+				return
+			}
+		}
 	}
 	if err := kernel.NormalizeCDNConfig(in, cdn); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
@@ -1724,6 +1777,7 @@ func (h *Handler) buildKernelApplyPayloadWithOverride(k *model.NodeKernel, realm
 	inbounds := make([]kernel.Inbound, 0, len(rows))
 	ports := make([]map[string]interface{}, 0, len(rows))
 	users := h.activeUsersByInbound(time.Now())
+	node, _ := h.repo.GetNodeByID(k.NodeID)
 	for _, row := range rows {
 		if row.Enabled != 1 {
 			continue
@@ -1735,7 +1789,7 @@ func (h *Handler) buildKernelApplyPayloadWithOverride(k *model.NodeKernel, realm
 		if err != nil {
 			return nil, "", err
 		}
-		if in.SupportsUsers() {
+		if in.SupportsUsers() && !(in.Settings.SSSubscriptionUsers && !meteredSSAllowed(node, k.KernelType)) {
 			in.Users = users[in.ID]
 		}
 		if in.Via, err = h.inboundVia(row); err != nil {
@@ -1753,13 +1807,20 @@ func (h *Handler) buildKernelApplyPayloadWithOverride(k *model.NodeKernel, realm
 		if row.RelayWhitelist == 1 || (cdn != nil && cdn.Enabled && cdn.OnlyCFOrigin) {
 			port["allow"] = h.inboundAllowList(row)
 		}
+		// Speed limits, enforced by the agent on the port (agent 3.6.4+;
+		// older agents ignore them, which saving warns about).
+		if row.RateUpMbps > 0 {
+			port["limitUpMbps"] = row.RateUpMbps
+		}
+		if row.RateDownMbps > 0 {
+			port["limitDownMbps"] = row.RateDownMbps
+		}
 		ports = append(ports, port)
 	}
 	proxy := ""
 	if enabled, proxyURL := h.getGithubProxyConfig(); enabled {
 		proxy = proxyURL
 	}
-	node, _ := h.repo.GetNodeByID(k.NodeID)
 	useXrayStats := k.KernelType == kernel.TypeXray && node != nil && !isLiteForwardMode(node.ForwardMode) && node.StatsCapable == 1 && nftCannotMark(node.NftError)
 	cfgMap, _ := h.repo.GetConfigsByNames([]string{singboxNTPModeConfigKey, singboxCacheFileConfigKey})
 	ntpMode := strings.ToLower(strings.TrimSpace(cfgMap[singboxNTPModeConfigKey]))
@@ -2490,4 +2551,12 @@ func nftCannotMark(nftErr string) bool {
 		}
 	}
 	return false
+}
+
+func meteredSSAllowed(node *model.Node, kernelType string) bool {
+	if node == nil {
+		return false
+	}
+	return strings.TrimSpace(node.NftError) == "" ||
+		(kernelType == kernel.TypeXray && node.StatsCapable == 1 && !isLiteForwardMode(node.ForwardMode))
 }
