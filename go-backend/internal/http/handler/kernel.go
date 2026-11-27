@@ -132,10 +132,12 @@ type inboundView struct {
 	DialerProxyInboundID   int64  `json:"dialerProxyInboundId"`
 	DialerProxyInboundName string `json:"dialerProxyInboundName,omitempty"`
 	// SplitRules are the inbound's 分流 rules.
-	SplitRules         []kernel.SplitRule `json:"splitRules"`
-	OutboundIPStrategy string             `json:"outboundIpStrategy"`
-	Tags               []string           `json:"tags"`
-	CDN                *kernel.CDNConfig  `json:"cdn,omitempty"`
+	SplitRules []kernel.SplitRule `json:"splitRules"`
+	// DefaultBlock: what no 分流 rule matched is dropped.
+	DefaultBlock       bool              `json:"defaultBlock"`
+	OutboundIPStrategy string            `json:"outboundIpStrategy"`
+	Tags               []string          `json:"tags"`
+	CDN                *kernel.CDNConfig `json:"cdn,omitempty"`
 }
 
 // kernelSecurityView hides the self-signed private material and DNS API
@@ -180,6 +182,7 @@ type inboundRequest struct {
 	OutboundID           *int64                  `json:"outboundId"`
 	DialerProxyInboundID *int64                  `json:"dialerProxyInboundId"`
 	SplitRules           *[]kernel.SplitRule     `json:"splitRules"`
+	DefaultBlock         *bool                   `json:"defaultBlock"`
 	Enabled              *bool                   `json:"enabled"`
 	Tags                 *[]string               `json:"tags,omitempty"`
 	CDN                  *kernel.CDNConfig       `json:"cdn,omitempty"`
@@ -673,6 +676,7 @@ func (h *Handler) inboundList(w http.ResponseWriter, r *http.Request) {
 			SourceName:         sourceNames[row.SourceID],
 			OutboundID:         row.OutboundID,
 			SplitRules:         rowSplitRules(row),
+			DefaultBlock:       row.DefaultBlock == 1,
 			OutboundIPStrategy: row.OutboundIPStrategy,
 			Tags:               splitTags(row.Tags),
 			CDN:                rowCDNConfig(row),
@@ -783,6 +787,7 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		RelayWhitelist       *bool               `json:"relayWhitelist"`
 		WhitelistExtra       *string             `json:"whitelistExtra"`
 		SplitRules           *[]kernel.SplitRule `json:"splitRules"`
+		DefaultBlock         *bool               `json:"defaultBlock"`
 		Enabled              *bool               `json:"enabled"`
 		Tags                 *[]string           `json:"tags"`
 		CDN                  *kernel.CDNConfig   `json:"cdn"`
@@ -831,6 +836,7 @@ func (h *Handler) inboundPatch(w http.ResponseWriter, r *http.Request) {
 		RelayWhitelist:       req.RelayWhitelist,
 		WhitelistExtra:       req.WhitelistExtra,
 		SplitRules:           req.SplitRules,
+		DefaultBlock:         req.DefaultBlock,
 		Enabled:              req.Enabled,
 		Tags:                 req.Tags,
 		CDN:                  req.CDN,
@@ -1140,7 +1146,7 @@ func (h *Handler) saveManagedInbound(w http.ResponseWriter, row model.NodeInboun
 	if req.SplitRules != nil {
 		splitRules = *req.SplitRules
 	}
-	if err := h.setInboundRouting(&row, k.KernelType, k.Version, outboundID, splitRules); err != nil {
+	if err := h.setInboundRouting(&row, k.KernelType, k.Version, outboundID, splitRules, req.DefaultBlock); err != nil {
 		response.WriteJSON(w, response.ErrDefault(err.Error()))
 		return
 	}

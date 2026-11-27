@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -213,6 +214,46 @@ func TestSubscriptionContract(t *testing.T) {
 		}
 		if code, _, _ := sub(newPath); code != http.StatusNotFound {
 			t.Fatal("deleted subscription link must stop working")
+		}
+	})
+
+	t.Run("subscription order", func(t *testing.T) {
+		g := saveNodeGroup(t, router, admin, `{"name":"排序","sourceAll":true}`)
+		save := func(name string) int64 {
+			out := kernelContractPost(t, router, admin, "/api/v1/subscription/save", `{"name":"`+name+`","groupIds":[`+jsonInt64(g)+`]}`)
+			if out.Code != 0 {
+				t.Fatalf("save %s: %+v", name, out)
+			}
+			return int64(out.Data.(map[string]interface{})["id"].(float64))
+		}
+		a := save("第一")
+		b := save("第二")
+		c := save("第三")
+		names := func() []string {
+			out := kernelContractPost(t, router, admin, "/api/v1/subscription/list", `{}`)
+			var got []string
+			for _, it := range out.Data.(map[string]interface{})["items"].([]interface{}) {
+				name := it.(map[string]interface{})["name"].(string)
+				if name == "第一" || name == "第二" || name == "第三" {
+					got = append(got, name)
+				}
+			}
+			return got
+		}
+		if got := names(); !slices.Equal(got, []string{"第一", "第二", "第三"}) {
+			t.Fatalf("new subscriptions append in order, got %v", got)
+		}
+		if out := kernelContractPost(t, router, admin, "/api/v1/subscription/order", `{"ids":[`+jsonInt64(c)+`,`+jsonInt64(a)+`,`+jsonInt64(b)+`]}`); out.Code != 0 {
+			t.Fatalf("order: %+v", out)
+		}
+		if got := names(); !slices.Equal(got, []string{"第三", "第一", "第二"}) {
+			t.Fatalf("reordered list = %v", got)
+		}
+		if out := kernelContractPost(t, router, admin, "/api/v1/subscription/save", `{"id":`+jsonInt64(a)+`,"name":"第一改"}`); out.Code != 0 {
+			t.Fatalf("edit: %+v", out)
+		}
+		if got := names(); !slices.Equal(got, []string{"第三", "第二"}) {
+			t.Fatalf("editing must keep order, got %v", got)
 		}
 	})
 }

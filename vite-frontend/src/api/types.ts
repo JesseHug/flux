@@ -899,6 +899,8 @@ export interface InboundApiItem {
   dialerProxyInboundName?: string;
   /** 分流 rules, tried in order before the default exit. */
   splitRules: SplitRule[];
+  /** The default exit is 阻断: only what a 分流 rule sends elsewhere gets out. */
+  defaultBlock?: boolean;
   /** The user's labels, for telling nodes apart in the list. */
   tags?: string[];
   cdn?: InboundCDNConfig;

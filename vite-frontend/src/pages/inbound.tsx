@@ -755,11 +755,16 @@ export default function InboundPage() {
         {item.splitRules?.length > 0 && (
           <Chip
             className="shrink-0 whitespace-nowrap"
-            color="primary"
+            color={item.defaultBlock ? "danger" : "primary"}
             size="sm"
+            title={
+              item.defaultBlock
+                ? "只放行分流规则选中的流量，其他的丢弃"
+                : undefined
+            }
             variant="flat"
           >
-            分流
+            {item.defaultBlock ? "仅分流放行" : "分流"}
           </Chip>
         )}
         {item.cdn?.enabled && (
@@ -911,6 +916,7 @@ export default function InboundPage() {
 
       {tab === "sources" && (
         <RemoteSourcesSection
+          inbounds={inbounds}
           sources={sources}
           onChanged={() => loadData(false)}
         />

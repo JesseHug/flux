@@ -545,6 +545,7 @@ type InboundBackup struct {
 	ImportedName         string `json:"importedName,omitempty"`
 	OutboundID           int64  `json:"outboundId,omitempty"`
 	SplitRules           string `json:"splitRules,omitempty"`
+	DefaultBlock         int    `json:"defaultBlock,omitempty"`
 	Tags                 string `json:"tags,omitempty"`
 	DialerProxyInboundID int64  `json:"dialerProxyInboundId,omitempty"`
 	CDNConfig            string `json:"cdnConfig,omitempty"`

@@ -2,10 +2,14 @@ package handler
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"go-backend/internal/kernel"
 	"go-backend/internal/store/model"
 	"go-backend/internal/store/repo"
 )
@@ -147,5 +151,75 @@ func TestSubTrafficSince(t *testing.T) {
 		if got := subTrafficSince(&c.s); got != c.want {
 			t.Fatalf("%+v: got %d, want %d", c.s, got, c.want)
 		}
+	}
+}
+
+func TestSubscriptionPreviewOrderMatchesSavedExportAndDoesNotChangeGroup(t *testing.T) {
+	repository, err := repo.Open(t.TempDir() + "/subscription-order.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	h := New(repository, "unit-test-secret")
+	nodeID := seedRelayTargetNode(t, repository, "ordered-node", "203.0.113.1")
+	xray := seedChainKernel(t, repository, nodeID, kernel.TypeXray)
+	for index, name := range []string{"first", "second", "third"} {
+		seedChainInbound(t, repository, xray, name, kernel.Inbound{
+			Protocol: kernel.ProtocolVLESS, Port: 8388 + index, Settings: kernel.Settings{UUID: "11111111-1111-4111-8111-111111111111"},
+		}, 0)
+	}
+	group := model.NodeGroup{Name: "sorted", SourceAll: 1, Options: `{"sort":"name"}`}
+	if err := repository.SaveNodeGroup(&group); err != nil {
+		t.Fatal(err)
+	}
+	preview := func(order []string) []subPreviewItem {
+		t.Helper()
+		payload, err := json.Marshal(subscriptionRequest{GroupIDs: &[]int64{group.ID}, Options: &subPipeline{NodeOrder: order}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		resRec := httptest.NewRecorder()
+		h.subscriptionPreview(resRec, httptest.NewRequest(http.MethodPost, "/api/v1/subscription/preview", strings.NewReader(string(payload))))
+		var result struct {
+			Code int
+			Data struct{ Items []subPreviewItem }
+		}
+		if err := json.Unmarshal(resRec.Body.Bytes(), &result); err != nil || result.Code != 0 || len(result.Data.Items) != 3 {
+			t.Fatalf("bad preview: %s (%v)", resRec.Body.String(), err)
+		}
+		return result.Data.Items
+	}
+	defaultItems := preview(nil)
+	order := []string{defaultItems[1].OrderKey, defaultItems[0].OrderKey}
+	sorted := preview(order)
+	if !slices.Equal([]string{sorted[0].Name, sorted[1].Name, sorted[2].Name}, []string{"second", "first", "third"}) {
+		t.Fatalf("preview order mismatch: %+v", sorted)
+	}
+	pipe := subPipeline{NodeOrder: order}
+	if err := pipe.normalize(); err != nil {
+		t.Fatal(err)
+	}
+	options, err := json.Marshal(pipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	subscription := &model.Subscription{
+		Name: "ordered", Kind: model.SubscriptionShare, UUID: "22222222-2222-4222-8222-222222222222", Password: "own", Token: strings.Repeat("a", 32),
+		GroupIDs: repo.FormatGroupIDs([]int64{group.ID}), Options: string(options), Enabled: 1,
+	}
+	if err := repository.SaveSubscription(subscription); err != nil {
+		t.Fatal(err)
+	}
+	export := httptest.NewRecorder()
+	h.openSubscription(export, httptest.NewRequest(http.MethodGet, "/api/v1/open_api/sub/"+subscription.Token+"?format=clash", nil))
+	body := export.Body.String()
+	second := strings.Index(body, `name: "second"`)
+	first := strings.Index(body, `name: "first"`)
+	third := strings.Index(body, `name: "third"`)
+	if export.Code != http.StatusOK || !(0 <= second && second < first && first < third) {
+		t.Fatalf("export order mismatch: %d\n%s", export.Code, body)
+	}
+	if after := preview(nil); !slices.Equal(after, defaultItems) {
+		t.Fatalf("saving the subscription must not reorder its node group: %+v", after)
 	}
 }

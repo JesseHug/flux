@@ -552,7 +552,12 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 					kinds = append(kinds, "cdn")
 				}
 			} else {
-				for _, entry := range inboundDirectShareEntries(&row, node) {
+				entries := inboundDirectShareEntries(&row, node)
+				for _, entry := range entries {
+					orderKey := fmt.Sprintf("direct:%d", row.ID)
+					if len(entries) > 1 {
+						orderKey = fmt.Sprintf("direct:%d:%s", row.ID, entry.Host)
+					}
 					endpoints = append(endpoints, kernel.Endpoint{
 						InboundID:            row.ID,
 						DialerProxyInboundID: row.DialerProxyInboundID,
@@ -560,6 +565,7 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 						Host:                 entry.Host,
 						Port:                 row.Port,
 						Inbound:              in,
+						OrderKey:             orderKey,
 						Direct:               true,
 						Proxy:                proxy,
 						SourceID:             row.SourceID,
@@ -590,6 +596,7 @@ func (h *Handler) inboundEndpoints(rows []model.NodeInbound) ([]kernel.Endpoint,
 					Host:                 host,
 					Port:                 entry.Port,
 					Inbound:              in,
+					OrderKey:             fmt.Sprintf("relay:%d:%s:%d", rel.ID, entry.Host, entry.Port),
 					Proxy:                proxy,
 					SourceID:             row.SourceID,
 					PostQuantumReality:   pq,
@@ -684,12 +691,16 @@ func expandCDNEndpoints(row model.NodeInbound, in kernel.Inbound, cfg kernel.CDN
 		if item.Remark != "" {
 			name = uniqueName(row.Name + " · " + item.Remark)
 		}
-		out = append(out, kernel.ApplyCDNToEndpoint(base, cfg, item.Host, item.Port, name))
+		ep := kernel.ApplyCDNToEndpoint(base, cfg, item.Host, item.Port, name)
+		ep.OrderKey = fmt.Sprintf("cdn:%d:%s:%d", row.ID, item.Host, item.Port)
+		out = append(out, ep)
 	}
 
 	originKey := strings.ToLower(cfg.Domain) + ":" + strconv.Itoa(edgePort)
 	if (cfg.KeepOriginHost || len(out) == 0) && !seen[originKey] {
-		out = append(out, kernel.ApplyCDNToEndpoint(base, cfg, cfg.Domain, edgePort, row.Name))
+		ep := kernel.ApplyCDNToEndpoint(base, cfg, cfg.Domain, edgePort, row.Name)
+		ep.OrderKey = fmt.Sprintf("cdn:%d:%s:%d", row.ID, strings.ToLower(cfg.Domain), edgePort)
+		out = append(out, ep)
 	}
 	return out
 }

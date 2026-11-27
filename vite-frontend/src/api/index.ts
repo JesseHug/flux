@@ -864,6 +864,7 @@ export interface SubPipeline {
   prefix: string;
   dedupe: boolean;
   sort: "" | "name";
+  nodeOrder?: string[];
   regionGroups: boolean;
   /** Chain proxy mode: "node" (specific node direct binding, Sub-Store compatible) or "group" (strategy group) */
   chainMode?: "node" | "group";
@@ -1074,6 +1075,7 @@ export interface SubscriptionDraft {
   resetDay: number;
 }
 export interface SubPreviewItem {
+  orderKey?: string;
   name: string;
   original: string;
   region: string;
@@ -1097,6 +1099,8 @@ export const saveSubscription = (data: SubscriptionDraft) =>
   Network.post<SubscriptionItem>("/subscription/save", data);
 export const deleteSubscription = (id: number) =>
   Network.post("/subscription/delete", { id });
+export const orderSubscriptions = (ids: number[]) =>
+  Network.post("/subscription/order", { ids });
 export const resetSubscription = (id: number) =>
   Network.post<SubscriptionItem>("/subscription/reset", { id });
 /** A subscription as the user it is assigned to sees it. */
@@ -1197,6 +1201,7 @@ export const saveRemoteSource = (data: {
   relayOnly: boolean;
   enabled?: boolean;
   userAgent?: string;
+  nodeOrder?: number[];
 }) =>
   Network.post<
     RemoteSourceItem | { source: RemoteSourceItem; result: RemoteSyncResult }
@@ -1331,6 +1336,7 @@ export const updateInboundSplit = (data: {
   id: number;
   outboundId: number;
   splitRules: SplitRule[];
+  defaultBlock?: boolean;
   outboundIpStrategy?:
     | "auto"
     | "ipv4_only"
