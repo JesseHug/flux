@@ -1,0 +1,124 @@
+/* FLUX Stardew Valley Pixel Craft Theme — strictly scoped under data-flux-theme="stardew" */
+
+:root[data-flux-theme="stardew"] {
+  --stardew-wood-outer: #7d4f2e;
+  --stardew-wood-inner: #c49956;
+  --stardew-wood-bg: #f3e2bb;
+  --stardew-inset: #f5e8cc;
+  --stardew-sidebar: #f6e7c4;
+  --stardew-shadow: rgba(45, 36, 24, 0.22);
+  --stardew-meter-track: #e6d5b2;
+  --stardew-scroll-track: #f0dfba;
+  --stardew-scroll-thumb: #9e7348;
+}
+
+:root[data-flux-theme="stardew"].dark {
+  --stardew-wood-outer: #4e4033;
+  --stardew-wood-inner: #7d6748;
+  --stardew-wood-bg: #24303c;
+  --stardew-inset: #233342;
+  --stardew-sidebar: #142230;
+  --stardew-shadow: rgba(5, 10, 18, 0.55);
+  --stardew-meter-track: #14202b;
+  --stardew-scroll-track: #13212f;
+  --stardew-scroll-thumb: #5f503f;
+}
+
+:root[data-flux-theme="stardew"] body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+:root[data-flux-theme="stardew"] ::selection {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.stardew-pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.stardew-wood-frame {
+  background-color: var(--content1);
+  border: 3px solid var(--stardew-wood-outer);
+  box-shadow:
+    inset 0 0 0 2px var(--stardew-wood-inner),
+    0 3px 0 var(--stardew-shadow);
+  border-radius: 4px;
+}
+
+.stardew-wood-sign {
+  background-color: var(--stardew-wood-bg);
+  color: var(--foreground);
+  border: 3px solid var(--stardew-wood-outer);
+  box-shadow:
+    inset 0 0 0 2px var(--stardew-wood-inner),
+    2px 3px 0 var(--stardew-shadow);
+  border-radius: 3px;
+}
+
+.stardew-inset {
+  background-color: var(--stardew-inset);
+  border: 1.5px solid var(--border);
+  border-radius: 3px;
+}
+
+.stardew-hero-shadow {
+  text-shadow:
+    0 2px 6px rgba(10, 14, 22, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.95);
+}
+
+/* Skin FLUX shared UI primitives when stardew theme is active */
+:root[data-flux-theme="stardew"] [data-slot="card"],
+:root[data-flux-theme="stardew"] [data-slot="dialog-content"] {
+  background-color: var(--content1);
+  border: 3px solid var(--stardew-wood-outer);
+  box-shadow:
+    inset 0 0 0 2px var(--stardew-wood-inner),
+    0 3px 0 var(--stardew-shadow);
+  border-radius: 4px;
+}
+
+:root[data-flux-theme="stardew"] aside.stardew-sidebar {
+  background-color: var(--stardew-sidebar);
+  border-right: 3px solid var(--stardew-wood-outer);
+  box-shadow: inset -2px 0 0 var(--stardew-wood-inner);
+}
+
+:root[data-flux-theme="stardew"] header.stardew-mobile-header,
+:root[data-flux-theme="stardew"] nav.stardew-mobile-tabbar {
+  background-color: var(--stardew-sidebar);
+  border-color: var(--stardew-wood-outer);
+}
+
+:root[data-flux-theme="stardew"] [data-slot="button"] {
+  border-radius: 3px;
+  transition: transform 0.1s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+:root[data-flux-theme="stardew"] [data-slot="button"]:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:root[data-flux-theme="stardew"] ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-flux-theme="stardew"] ::-webkit-scrollbar-track {
+  background: var(--stardew-scroll-track);
+}
+
+:root[data-flux-theme="stardew"] ::-webkit-scrollbar-thumb {
+  background: var(--stardew-scroll-thumb);
+  border: 1px solid var(--stardew-wood-outer);
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-flux-theme="stardew"] * {
+    scroll-behavior: auto;
+  }
+}

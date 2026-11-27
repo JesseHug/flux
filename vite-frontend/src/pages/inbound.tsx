@@ -43,9 +43,6 @@ import {
 } from "@/hooks/use-cached-state";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
 import { GroupHeader, groupItems, useCollapsed } from "@/pages/inbound/group";
-import { LatencyCell } from "@/components/latency-cell";
-import { RouteModal } from "@/components/route-modal";
-import { LatencyTrendModal } from "@/components/lazy-charts";
 import { ActionSheet } from "@/components/action-sheet";
 import { SplitModal } from "@/pages/inbound/split-modal";
 import {
@@ -289,15 +286,6 @@ export default function InboundPage() {
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [batchToggling, setBatchToggling] = useState(false);
   const [probing, setProbing] = useState(false);
-  const [probingIds, setProbingIds] = useState<Set<number>>(new Set());
-  const [routeNode, setRouteNode] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
-  const [trendNode, setTrendNode] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
   const [sources, setSources] = useCachedState<RemoteSourceItem[]>(
     PAGE,
     "sources",
@@ -626,36 +614,6 @@ export default function InboundPage() {
     }
   };
 
-  // Probes one inbound again and patches its result in place.
-  const probeOne = async (id: number) => {
-    setProbingIds((prev) => new Set(prev).add(id));
-    try {
-      const res = await probeInbounds([id]);
-      const probe = res.code === 0 ? res.data?.[String(id)] : undefined;
-
-      if (!probe) {
-        toast.error(res.msg || "检测失败");
-
-        return;
-      }
-      setInbounds((prev) =>
-        prev.map((i) =>
-          i.id === id ? { ...i, probe: latestProbe(probe, i.probe) } : i,
-        ),
-      );
-    } catch {
-      toast.error("检测失败");
-    } finally {
-      setProbingIds((prev) => {
-        const next = new Set(prev);
-
-        next.delete(id);
-
-        return next;
-      });
-    }
-  };
-
   const gridClass = "flex flex-col";
 
   const renderInbound = (item: InboundApiItem) => {
@@ -676,16 +634,6 @@ export default function InboundPage() {
         : item.nodeName;
 
     const selected = selectMode && selectedIds.has(item.id);
-    // Built inbounds show their node's latency and routes on the 节点
-    // page; only imported nodes, which have no node here, measure their own.
-    const latency =
-      item.external && item.enabled && item.probe?.skipped !== true ? (
-        <LatencyCell
-          probe={probe}
-          probing={probingIds.has(item.id)}
-          onProbe={() => probeOne(item.id)}
-        />
-      ) : null;
     const activate = () =>
       selectMode ? toggleSelect(item.id) : setSheetFor(item.id);
     const dotClass = unreachable
@@ -699,9 +647,7 @@ export default function InboundPage() {
       ? `连不上：${probe?.error ?? ""}`
       : running
         ? probe
-          ? item.external
-            ? `可连接 · ${probe.latencyMs} ms`
-            : "可连接"
+          ? "可连接"
           : "运行中"
         : item.enabled
           ? kernelStatusText(item.kernelStatus)
@@ -852,9 +798,6 @@ export default function InboundPage() {
             </span>
           </div>
         </div>
-        {latency && (
-          <div className="flex shrink-0 justify-end sm:w-32">{latency}</div>
-        )}
         <div
           className="hidden w-36 shrink-0 text-right text-sm tabular-nums sm:block"
           title={`↑ ${formatTraffic(item.uploadBytes)} · ↓ ${formatTraffic(item.downloadBytes)}`}
@@ -1527,16 +1470,6 @@ export default function InboundPage() {
           }}
         </ModalContent>
       </Modal>
-      <RouteModal
-        nodeId={routeNode?.id ?? null}
-        nodeName={routeNode?.name}
-        onClose={() => setRouteNode(null)}
-      />
-      <LatencyTrendModal
-        nodeId={trendNode?.id ?? null}
-        nodeName={trendNode?.name}
-        onClose={() => setTrendNode(null)}
-      />
     </AnimatedPage>
   );
 }

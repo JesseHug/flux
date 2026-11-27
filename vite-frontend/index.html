@@ -89,6 +89,15 @@
         }
 
         // 立即检测主题并应用（优先读取 localStorage 中的用户偏好）
+        var savedTheme = 'stardew';
+        try {
+          var rawTheme = localStorage.getItem('flux:active-theme') ?? localStorage.getItem('flyx:active-theme') ?? localStorage.getItem('flvx:active-theme');
+          if (rawTheme) savedTheme = rawTheme;
+        } catch (_) {}
+        if (savedTheme === 'stardew') {
+          document.documentElement.setAttribute('data-flux-theme', 'stardew');
+        }
+
         var savedMode = '';
         try { savedMode = localStorage.getItem('flux:theme') ?? localStorage.getItem('flyx:theme') ?? localStorage.getItem('flvx:theme') ?? ''; } catch (_) {}
 
@@ -171,6 +180,18 @@
       html.dark body {
         background-color: #000000;
         color: #ffffff;
+      }
+
+      html[data-flux-theme="stardew"] body,
+      html[data-flux-theme="stardew"] #root {
+        background-color: #fef1d1;
+        color: #3e3026;
+      }
+
+      html.dark[data-flux-theme="stardew"] body,
+      html.dark[data-flux-theme="stardew"] #root {
+        background-color: #0c1926;
+        color: #f6eedf;
       }
       
       #root {

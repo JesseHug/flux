@@ -11,10 +11,12 @@
 
 import { registerTheme } from "./registry";
 // ── Built-in themes ──────────────────────────────────────────────────────────
+import stardewTheme from "./stardew";
 import defaultTheme from "./default";
 import cyberpunkTheme from "./example-cyberpunk";
 
-// Register all themes
+// Register all themes (stardew is the default theme)
+registerTheme(stardewTheme);
 registerTheme(defaultTheme);
 registerTheme(cyberpunkTheme);
 

@@ -169,6 +169,10 @@ jspm_packages/
 dist/
 build/
 
+# Stardew theme local downloaded assets (fetched via `pnpm run stardew:assets`)
+vite-frontend/public/stardew/
+vite-frontend/dist-demo/
+
 # ==========================================
 # Go
 # ==========================================

@@ -10,8 +10,7 @@ import {
   useCachedState,
 } from "@/hooks/use-cached-state";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
-import { latestProbe } from "@/utils/latest-probe";
-import { getInboundList, getInboundRelays, probeInboundRelays } from "@/api";
+import { getInboundList, getInboundRelays } from "@/api";
 import { AnimatedPage } from "@/components/animated-page";
 import { PageLoadingState } from "@/components/page-state";
 import {
@@ -22,7 +21,6 @@ import {
   PageToolbar,
   ToolbarButton,
 } from "@/components/page-kit";
-import { RelayLatencyCell } from "@/components/relay-latency";
 import ForwardPage from "@/pages/forward";
 import { RelayModal } from "@/pages/inbound/relay-modal";
 import TunnelPage from "@/pages/tunnel";
@@ -64,14 +62,8 @@ function relayLabel(l: InboundRelayApiItem): string {
   return cut > 0 ? full.slice(0, cut) : full;
 }
 
-/** A landing's relay lines: one row each, its relay and its latency. */
-function RelayLines({
-  lines,
-  renderLatency,
-}: {
-  lines: InboundRelayApiItem[];
-  renderLatency: (l: InboundRelayApiItem) => React.ReactNode;
-}) {
+/** A landing's relay lines: one row each with entry endpoint (latency hidden). */
+function RelayLines({ lines }: { lines: InboundRelayApiItem[] }) {
   return (
     <div className="divide-y divide-divider/70 rounded-xl bg-default-100/60">
       {lines.map((l) => {
@@ -93,12 +85,8 @@ function RelayLines({
             >
               {relayLabel(l)}
             </span>
-            <span className="shrink-0 text-xs">
-              {renderLatency(l) ?? (
-                <span className="font-mono text-default-400">
-                  {entry ? `${l.shareHost || entry.Host}:${entry.Port}` : "-"}
-                </span>
-              )}
+            <span className="shrink-0 font-mono text-xs text-default-400">
+              {entry ? `${l.shareHost || entry.Host}:${entry.Port}` : "-"}
             </span>
           </div>
         );
@@ -107,7 +95,7 @@ function RelayLines({
   );
 }
 
-/** Tunnel latency, throughput and errors over time (was 监控 → 隧道). */
+/** Tunnel throughput and errors over time. */
 function QualityView() {
   return <TunnelMonitorView />;
 }
@@ -116,7 +104,6 @@ const LINES_PAGE = "relay-lines";
 
 /** Relay lines grouped by the landing they lead to. */
 function LinesView() {
-  // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(LINES_PAGE));
   const [inbounds, setInbounds] = useCachedState<InboundApiItem[]>(
     LINES_PAGE,
@@ -131,9 +118,7 @@ function LinesView() {
   const [editing, setEditing] = useState<InboundApiItem | null>(null);
   const [onlyWithRelays, setOnlyWithRelays] = useState(false);
   const [query, setQuery] = useState("");
-  const [probingIds, setProbingIds] = useState<Set<number>>(new Set());
   const loadingRef = useRef(false);
-  // A reload asked for during a silent poll (after an edit) runs after it.
   const reloadRef = useRef(false);
 
   const load = useCallback(async (silent = false): Promise<void> => {
@@ -150,16 +135,7 @@ function LinesView() {
       ]);
 
       if (inRes.code === 0) setInbounds(inRes.data ?? []);
-      if (relRes.code === 0) {
-        setRelays((prev) => {
-          const previous = new Map(prev.map((r) => [r.id, r]));
-
-          return (relRes.data ?? []).map((r) => ({
-            ...r,
-            latency: latestProbe(r.latency, previous.get(r.id)?.latency),
-          }));
-        });
-      }
+      if (relRes.code === 0) setRelays(relRes.data ?? []);
       if (inRes.code === 0 && relRes.code === 0) markPageCached(LINES_PAGE);
       if (!silent && (inRes.code !== 0 || relRes.code !== 0))
         toast.error(inRes.msg || relRes.msg || "加载失败");
@@ -179,53 +155,6 @@ function LinesView() {
     load();
   }, [load]);
   useVisiblePolling(useCallback(() => load(true), [load]));
-
-  /** Measures the given lines (all when empty) and merges the results. */
-  const probe = useCallback(
-    async (ids: number[]) => {
-      const busy = ids.length > 0 ? ids : relays.map((r) => r.id);
-
-      setProbingIds((prev) => new Set([...prev, ...busy]));
-      try {
-        const res = await probeInboundRelays(ids);
-
-        if (res.code !== 0) {
-          toast.error(res.msg || "检测失败");
-
-          return;
-        }
-        const data = res.data ?? {};
-
-        setRelays((prev) =>
-          prev.map((r) =>
-            data[String(r.id)]
-              ? { ...r, latency: latestProbe(data[String(r.id)], r.latency) }
-              : r,
-          ),
-        );
-      } catch {
-        toast.error("检测失败");
-      } finally {
-        setProbingIds((prev) => {
-          const next = new Set(prev);
-
-          busy.forEach((id) => next.delete(id));
-
-          return next;
-        });
-      }
-    },
-    [relays],
-  );
-
-  const latencyOf = (l: InboundRelayApiItem) =>
-    l.forwardExists ? (
-      <RelayLatencyCell
-        latency={l.latency}
-        probing={probingIds.has(l.id)}
-        onProbe={() => probe([l.id])}
-      />
-    ) : null;
 
   const byInbound = useMemo(() => {
     const m = new Map<number, InboundRelayApiItem[]>();
@@ -259,11 +188,6 @@ function LinesView() {
         >
           只看有中转的
         </ToolbarButton>
-        {relays.length > 0 && (
-          <ToolbarButton onPress={() => probe([])}>
-            {probingIds.size > 0 ? "测延迟中…" : "测延迟"}
-          </ToolbarButton>
-        )}
       </PageToolbar>
 
       {shown.length === 0 ? (
@@ -288,9 +212,7 @@ function LinesView() {
               lines.length === 0
                 ? `${landing} · 无中转，点击添加`
                 : `${landing} · ${lines.length} 条中转${broken ? " · 有暂停" : ""}`;
-            const lineList = lines.length > 0 && (
-              <RelayLines lines={lines} renderLatency={latencyOf} />
-            );
+            const lineList = lines.length > 0 && <RelayLines lines={lines} />;
 
             return (
               <ListRow
@@ -308,7 +230,6 @@ function LinesView() {
                 meta={summary}
                 right={
                   lineList && (
-                    // Wide screens: the lines sit beside the landing.
                     <div className="hidden w-[30rem] lg:block xl:w-[38rem]">
                       {lineList}
                     </div>

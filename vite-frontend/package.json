@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint --fix",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "stardew:assets": "node scripts/stardew/fetch-assets.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

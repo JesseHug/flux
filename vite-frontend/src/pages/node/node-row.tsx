@@ -2,27 +2,26 @@ import { memo } from "react";
 import { GripVertical } from "lucide-react";
 
 import { Chip } from "@/shadcn-bridge/heroui/chip";
-import { LatencyCell, probePoints } from "@/components/latency-cell";
 import { ListRow } from "@/components/page-kit";
 import { getConnectionStatusMeta } from "@/pages/node/display";
 import { Node } from "@/pages/node/types";
-import { getNodeExpiryMeta, SortableItem } from "@/pages/node/helpers";
+import { SortableItem } from "@/pages/node/helpers";
 import { NodeLiveStats } from "@/pages/node/node-live-stats";
 import { formatUptime } from "@/pages/node/format";
+import { useThemeContext } from "@/themes/context";
+import { useStardewEnv } from "@/themes/stardew/env-context";
+import { StardewCabin } from "@/themes/stardew/components/stardew-cabin";
 
 export interface NodeRowActions {
   toggleSelect: (id: number) => void;
-  probeNode: (id: number) => Promise<void>;
   setSheetNodeId: (id: number) => void;
-  setRouteNode: (node: Node) => void;
-  setTrendNode: (node: Node) => void;
+  onPickCabin?: (node: Node) => void;
 }
 interface NodeRowProps {
   node: Node;
   progress?: { stage: string; percent: number; message: string };
   month?: [number, number];
   selected: boolean;
-  probing: boolean;
   selectMode: boolean;
   isDisplayFiltered: boolean;
   wide: boolean;
@@ -41,43 +40,20 @@ const NodeRowContent = memo(function NodeRowContent({
   progress,
   month,
   selected,
-  probing,
   selectMode,
   isDisplayFiltered,
   wide,
   actions,
   listeners,
 }: NodeRowProps & { listeners: any }) {
-  const {
-    toggleSelect,
-    probeNode,
-    setSheetNodeId,
-    setRouteNode,
-    setTrendNode,
-  } = actions;
-  const renderLatency = (node: Node) =>
-    node.isRemote !== 1 && node.connectionStatus === "online" ? (
-      probePoints(node.latency).length === 0 ? null : (
-        <LatencyCell
-          probe={node.latency}
-          probing={probing}
-          onProbe={() => probeNode(node.id)}
-          onShowRoute={() => setRouteNode(node)}
-          onShowTrend={() => setTrendNode(node)}
-        />
-      )
-    ) : null;
+  const { toggleSelect, setSheetNodeId, onPickCabin } = actions;
+  const { activeThemeId, effectiveMode } = useThemeContext();
+  const { getNodeCabin } = useStardewEnv();
+  const isStardew = activeThemeId === "stardew";
+  const isNight = effectiveMode === "dark";
 
   const isRemoteNode = node.isRemote === 1;
   const online = node.connectionStatus === "online";
-  const expiryMeta = getNodeExpiryMeta(node.expiryTime, node.renewalCycle);
-  const showExpiry = Boolean(
-    node.expiryTime &&
-      node.expiryTime > 0 &&
-      node.renewalCycle &&
-      !node.expiryReminderDismissed &&
-      expiryMeta.isHighlighted,
-  );
 
   const upgrading = progress && progress.percent < 100;
   const address =
@@ -111,16 +87,6 @@ const NodeRowContent = memo(function NodeRowContent({
               轻量
             </Chip>
           )}
-          {showExpiry && (
-            <Chip
-              className="shrink-0"
-              color={expiryMeta.tone}
-              size="sm"
-              variant="flat"
-            >
-              {expiryMeta.label}
-            </Chip>
-          )}
         </>
       }
       footer={
@@ -142,10 +108,6 @@ const NodeRowContent = memo(function NodeRowContent({
               variant="row"
             />
           )}
-          {/* A fixed slot keeps the stats in line across rows. */}
-          <div className="contents lg:flex lg:w-56 lg:justify-end">
-            {renderLatency(node)}
-          </div>
           {!isDisplayFiltered && (
             <span
               className="cursor-grab touch-none p-1 text-default-300 transition-opacity hover:text-default-500 active:cursor-grabbing sm:opacity-0 sm:group-hover:opacity-100"
@@ -161,7 +123,30 @@ const NodeRowContent = memo(function NodeRowContent({
       selected={selected}
       status={upgrading ? "warn" : online ? "ok" : "bad"}
       statusTitle={getConnectionStatusMeta(node.connectionStatus).text}
-      title={node.name}
+      title={
+        <span className="inline-flex items-center gap-2">
+          {isStardew && !isRemoteNode && (
+            <button
+              aria-label={`更换 ${node.name} 的小屋外观`}
+              className="stardew-inset inline-flex shrink-0 p-0.5 transition-transform hover:scale-105"
+              title="点击选择小屋样式"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPickCabin?.(node);
+              }}
+            >
+              <StardewCabin
+                cabinId={getNodeCabin(node.id)}
+                isNight={isNight}
+                online={online}
+                size={24}
+              />
+            </button>
+          )}
+          <span className="truncate">{node.name}</span>
+        </span>
+      }
       onPress={() => setSheetNodeId(node.id)}
       onSelect={() => toggleSelect(node.id)}
     />

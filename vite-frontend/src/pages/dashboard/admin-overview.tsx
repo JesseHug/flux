@@ -26,6 +26,12 @@ import {
   useCachedState,
 } from "@/hooks/use-cached-state";
 import { formatTraffic } from "@/utils/traffic";
+import { useThemeContext } from "@/themes/context";
+import { cabinLabel, statIconUrl } from "@/themes/stardew/assets";
+import { useStardewEnv } from "@/themes/stardew/env-context";
+import { StardewFarmHero } from "@/themes/stardew/components/farm-hero";
+import { StardewCabin } from "@/themes/stardew/components/stardew-cabin";
+import { HousePickerModal } from "@/themes/stardew/components/house-picker-modal";
 
 const DAY = 86400000;
 const SOON = 3 * DAY;
@@ -48,8 +54,6 @@ interface Issue {
 
 type IssueKind =
   | "offline"
-  | "expired"
-  | "expiring"
   | "kernel"
   | "inbound"
   | "probe"
@@ -63,16 +67,6 @@ const KINDS: Record<
   offline: {
     label: (n) => `${n} 个服务器离线`,
     hint: "agent 没有连接面板，检查服务器上的 agent 是否在运行",
-    path: "/node",
-  },
-  expired: {
-    label: (n) => `${n} 个服务器已到期`,
-    hint: "续费后在服务器里更新到期时间",
-    path: "/node",
-  },
-  expiring: {
-    label: (n) => `${n} 个服务器即将到期`,
-    hint: "3 天内到期",
     path: "/node",
   },
   kernel: {
@@ -110,6 +104,7 @@ function Metric({
   foot,
   footTone,
   footRight,
+  stardewIcon,
   onPress,
 }: {
   label: string;
@@ -120,39 +115,58 @@ function Metric({
   /** Only problems get a color; "all good" stays quiet. */
   footTone?: "danger" | "warning" | "success";
   footRight?: string;
+  stardewIcon?: "farm-computer" | "scarecrow" | "seedling" | "wilted-plant";
   onPress: () => void;
 }) {
+  const { activeThemeId } = useThemeContext();
+  const { customAssetBaseUrl } = useStardewEnv();
+  const [iconFailed, setIconFailed] = useState(false);
+  const showIcon = activeThemeId === "stardew" && stardewIcon && !iconFailed;
+
   return (
     <button
-      className="bg-background px-4 py-4 text-left transition-colors hover:bg-default-50 lg:px-5"
+      className="flex items-center gap-3.5 bg-background px-4 py-4 text-left transition-colors hover:bg-default-50 lg:px-5"
       type="button"
       onClick={onPress}
     >
-      <div className="truncate text-sm text-default-500">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">
-        {value}
-        {total !== undefined && (
-          <span className="ml-1 text-sm font-normal text-default-400">
-            / {total}
-          </span>
-        )}
-      </div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-xs">
-        <span
-          className={`truncate ${
-            footTone === "danger"
-              ? "text-danger"
-              : footTone === "warning"
-                ? "text-warning-600"
-                : "text-default-400"
-          }`}
-        >
-          {foot}
+      {showIcon && (
+        <span className="stardew-inset flex h-11 w-11 shrink-0 items-center justify-center p-1.5">
+          <img
+            alt=""
+            aria-hidden="true"
+            className="stardew-pixelated h-full w-full object-contain"
+            src={statIconUrl(stardewIcon, customAssetBaseUrl)}
+            onError={() => setIconFailed(true)}
+          />
         </span>
-        {footRight && (
-          <span className="shrink-0 text-default-400">{footRight}</span>
-        )}
-      </div>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-default-500">{label}</span>
+        <span className="mt-1 block text-2xl font-semibold tabular-nums tracking-tight">
+          {value}
+          {total !== undefined && (
+            <span className="ml-1 text-sm font-normal text-default-400">
+              / {total}
+            </span>
+          )}
+        </span>
+        <span className="mt-1 flex items-center justify-between gap-2 text-xs">
+          <span
+            className={`truncate ${
+              footTone === "danger"
+                ? "text-danger"
+                : footTone === "warning"
+                  ? "text-warning-600"
+                  : "text-default-400"
+            }`}
+          >
+            {foot}
+          </span>
+          {footRight && (
+            <span className="shrink-0 text-default-400">{footRight}</span>
+          )}
+        </span>
+      </span>
     </button>
   );
 }
@@ -199,6 +213,11 @@ const PAGE = "admin-overview";
 /** The admin's overview: health of nodes → landings → relays → subscriptions. */
 export function AdminOverview() {
   const navigate = useNavigate();
+  const { activeThemeId, effectiveMode } = useThemeContext();
+  const { getNodeCabin, setNodeCabin } = useStardewEnv();
+  const isStardew = activeThemeId === "stardew";
+  const isNight = effectiveMode === "dark";
+  const [pickerNode, setPickerNode] = useState<NodeApiItem | null>(null);
   // A revisit shows the last data at once and reloads in the background.
   const [loading, setLoading] = useState(() => !pageCached(PAGE));
   const [nodes, setNodes] = useCachedState<NodeApiItem[]>(PAGE, "nodes", []);
@@ -286,20 +305,6 @@ export function AdminOverview() {
         detail: "agent 没有连接面板",
       });
     }
-    if (
-      n.expiryTime &&
-      n.expiryTime - now <= SOON &&
-      !n.expiryReminderDismissed
-    ) {
-      const expired = n.expiryTime <= now;
-
-      issues.push({
-        kind: expired ? "expired" : "expiring",
-        level: expired ? "danger" : "warning",
-        name: n.name,
-        detail: daysLeft(n.expiryTime),
-      });
-    }
   }
   for (const k of kernels) {
     if (k.status === "error") {
@@ -374,33 +379,15 @@ export function AdminOverview() {
     .slice(0, 4);
   const topMax = top[0] ? top[0].uploadBytes + top[0].downloadBytes : 1;
 
-  const expiring = [
-    ...nodes
-      .filter(
-        (n) =>
-          n.expiryTime &&
-          n.expiryTime - now <= 30 * DAY &&
-          !n.expiryReminderDismissed,
-      )
-      .map((n) => ({
-        key: `n${n.id}`,
-        kind: "服务器",
-        name: n.name,
-        at: n.expiryTime ?? 0,
-        path: "/node",
-      })),
-    ...shares
-      .filter(
-        (s) => s.enabled && s.expireTime && s.expireTime - now <= 30 * DAY,
-      )
-      .map((s) => ({
-        key: `s${s.id}`,
-        kind: "订阅",
-        name: s.name,
-        at: s.expireTime,
-        path: "/subscription",
-      })),
-  ]
+  const expiring = shares
+    .filter((s) => s.enabled && s.expireTime && s.expireTime - now <= 30 * DAY)
+    .map((s) => ({
+      key: `s${s.id}`,
+      kind: "订阅",
+      name: s.name,
+      at: s.expireTime,
+      path: "/subscription",
+    }))
     .sort((a, b) => a.at - b.at)
     .slice(0, 5);
 
@@ -408,6 +395,9 @@ export function AdminOverview() {
 
   return (
     <AnimatedPage className="space-y-8 px-4 py-6 lg:px-10 lg:py-8">
+      {isStardew && (
+        <StardewFarmHero onlineCount={online} totalCount={nodes.length} />
+      )}
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-xl font-semibold tracking-tight">概览</h1>
         <p className="text-xs text-default-400">
@@ -420,7 +410,11 @@ export function AdminOverview() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-divider bg-divider lg:grid-cols-4">
+      <div
+        className={`grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-divider bg-divider lg:grid-cols-4 ${
+          isStardew ? "stardew-wood-frame" : ""
+        }`}
+      >
         <Metric
           foot={
             nodes.length === 0
@@ -442,6 +436,7 @@ export function AdminOverview() {
                 : undefined
           }
           label="服务器在线"
+          stardewIcon="farm-computer"
           total={nodes.length}
           value={online}
           onPress={() => navigate("/node")}
@@ -469,6 +464,7 @@ export function AdminOverview() {
                 : undefined
           }
           label="节点运行"
+          stardewIcon="scarecrow"
           total={enabledInbounds.length}
           value={runningInbounds.length}
           onPress={() => navigate("/inbound")}
@@ -489,6 +485,7 @@ export function AdminOverview() {
                 : undefined
           }
           label="中转线路"
+          stardewIcon="seedling"
           total={relays.length || undefined}
           value={relaysUp.length}
           onPress={() => navigate("/relay")}
@@ -510,6 +507,7 @@ export function AdminOverview() {
                 : undefined
           }
           label="有效订阅"
+          stardewIcon="wilted-plant"
           total={subs.length}
           value={activeSubs.length}
           onPress={() => navigate("/subscription")}
@@ -579,23 +577,52 @@ export function AdminOverview() {
                 {shownNodes.map((n) => {
                   const up = n.status === 1;
                   const ip = String(n.serverIpV4 || n.serverIp || "");
+                  const cabinId = getNodeCabin(n.id);
 
                   return (
-                    <button
+                    <div
                       key={n.id}
-                      className="flex w-full items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
-                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-3 py-2.5 text-left text-sm transition-colors hover:bg-default-50"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => navigate("/node")}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate("/node");
+                        }
+                      }}
                     >
-                      <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${up ? "bg-success" : "bg-danger"}`}
-                        title={up ? "在线" : "离线"}
-                      />
+                      {isStardew && n.isRemote !== 1 ? (
+                        <button
+                          aria-label={`更换 ${n.name} 的小屋外观`}
+                          className="stardew-inset shrink-0 p-1 transition-transform hover:scale-105"
+                          title={`点击更换小屋（当前：${cabinLabel(cabinId)}）`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPickerNode(n);
+                          }}
+                        >
+                          <StardewCabin
+                            cabinId={cabinId}
+                            isNight={isNight}
+                            online={up}
+                            size={26}
+                          />
+                        </button>
+                      ) : (
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${up ? "bg-success" : "bg-danger"}`}
+                          title={up ? "在线" : "离线"}
+                        />
+                      )}
                       <span className="min-w-0 flex-1 truncate">{n.name}</span>
                       <span className="shrink-0 text-xs tabular-nums text-default-400">
                         {up ? ip : "离线"}
                       </span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -674,6 +701,16 @@ export function AdminOverview() {
           )}
         </div>
       </div>
+
+      {pickerNode && (
+        <HousePickerModal
+          currentCabinId={getNodeCabin(pickerNode.id)}
+          isOpen={Boolean(pickerNode)}
+          serverName={pickerNode.name}
+          onClose={() => setPickerNode(null)}
+          onSelect={(cabinId) => setNodeCabin(pickerNode.id, cabinId)}
+        />
+      )}
     </AnimatedPage>
   );
 }

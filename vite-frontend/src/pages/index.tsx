@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Turnstile } from "@marsidev/react-turnstile";
+import { Moon, Pause, Play, Sun } from "lucide-react";
 
 import { Card, CardBody, CardHeader } from "@/shadcn-bridge/heroui/card";
 import { Input } from "@/shadcn-bridge/heroui/input";
@@ -24,6 +25,15 @@ import { writeLoginSession } from "@/utils/session";
 import { getPasskey } from "@/utils/passkey";
 import { githubCallbackUrl, goToGithub } from "@/utils/github-login";
 import { useWebViewMode } from "@/hooks/useWebViewMode";
+import { useThemeContext } from "@/themes/context";
+import { useStardewEnv } from "@/themes/stardew/env-context";
+import { useStardewAudio } from "@/themes/stardew/audio/audio-context";
+import {
+  SEASON_LABELS,
+  landscapeUrl,
+  type SceneKey,
+  type Season,
+} from "@/themes/stardew/assets";
 
 interface LoginForm {
   username: string;
@@ -43,8 +53,17 @@ export default function IndexPage() {
   const [siteKey, setSiteKey] = useState("");
   const [passkeyEnabled, setPasskeyEnabled] = useState(false);
   const [githubEnabled, setGithubEnabled] = useState(false);
+  const [stardewBgFailed, setStardewBgFailed] = useState(false);
   const navigate = useNavigate();
   const isWebView = useWebViewMode();
+  const { activeThemeId, effectiveMode, setMode } = useThemeContext();
+  const { effectiveSeason, customAssetBaseUrl, setSeasonMode } =
+    useStardewEnv();
+  const { playing, togglePlay } = useStardewAudio();
+  const isStardew = activeThemeId === "stardew";
+  const isNight = effectiveMode === "dark";
+  const stardewScene: SceneKey = `${effectiveSeason}-${isNight ? "night" : "day"}`;
+  const stardewBgUrl = landscapeUrl(stardewScene, customAssetBaseUrl);
 
   // The app's WebView can't come back from GitHub, so no button there.
   useEffect(() => {
@@ -232,9 +251,71 @@ export default function IndexPage() {
 
   return (
     <div className="relative flex flex-col min-h-screen bg-mesh-gradient overflow-hidden">
+      {isStardew && (
+        <>
+          {!stardewBgFailed && (
+            <img
+              alt=""
+              aria-hidden="true"
+              className="stardew-pixelated pointer-events-none absolute inset-0 h-full w-full object-cover object-center"
+              src={stardewBgUrl}
+              onError={() => setStardewBgFailed(true)}
+            />
+          )}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-black/20 dark:bg-black/45"
+          />
+          <div className="stardew-wood-sign absolute right-4 top-4 z-20 flex items-center gap-1.5 px-2.5 py-1.5 text-xs">
+            <select
+              aria-label="选择季节"
+              className="rounded border border-border bg-content1 px-1.5 py-0.5 text-xs font-semibold text-foreground outline-none"
+              value={effectiveSeason}
+              onChange={(e) => setSeasonMode(e.target.value as Season)}
+            >
+              {(Object.keys(SEASON_LABELS) as Season[]).map((s) => (
+                <option key={s} value={s}>
+                  {SEASON_LABELS[s]}
+                </option>
+              ))}
+            </select>
+            <button
+              aria-label={isNight ? "切换白天" : "切换夜晚"}
+              className="flex h-6 w-6 items-center justify-center rounded border border-border bg-content1 text-foreground"
+              type="button"
+              onClick={() => setMode(isNight ? "light" : "dark")}
+            >
+              {isNight ? (
+                <Moon className="h-3.5 w-3.5" />
+              ) : (
+                <Sun className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <button
+              aria-label={playing ? "暂停背景音乐" : "播放背景音乐"}
+              className="flex h-6 items-center gap-1 rounded bg-primary px-2 text-xs font-semibold text-primary-foreground"
+              type="button"
+              onClick={togglePlay}
+            >
+              {playing ? (
+                <Pause className="h-3 w-3" />
+              ) : (
+                <Play className="h-3 w-3" />
+              )}
+              <span>{playing ? "暂停" : "配乐"}</span>
+            </button>
+          </div>
+        </>
+      )}
       <section className="flex flex-col items-center justify-center flex-1 w-full p-4 relative z-10">
         <div className="w-full max-w-[380px] px-4 sm:px-0">
-          <Card className="w-full border-0 bg-transparent p-0">
+          <Card
+            className={
+              isStardew
+                ? "stardew-wood-frame w-full p-2"
+                : "w-full border-0 bg-transparent p-0"
+            }
+          >
             <CardHeader className="pb-0 pt-6 px-6 flex-col items-center">
               <BrandLogo className="w-10 h-10 mb-4" size={40} />
               <h1 className="text-2xl font-bold tracking-tight text-foreground">

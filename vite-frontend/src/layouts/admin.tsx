@@ -27,6 +27,8 @@ import { siteConfig } from "@/config/site";
 import { useMobileBreakpoint } from "@/hooks/useMobileBreakpoint";
 import { getAdminFlag } from "@/utils/session";
 import { useHasMySubscriptions } from "@/hooks/use-has-my-subscriptions";
+import { useThemeContext } from "@/themes/context";
+import { StardewSidebarControls } from "@/themes/stardew/components/mini-controls";
 
 interface MenuItem {
   path: string;
@@ -59,6 +61,8 @@ export default function AdminLayout({
   );
   const isMobile = useMobileBreakpoint();
   const collapsed = !isMobile && isCollapsed;
+  const { activeThemeId } = useThemeContext();
+  const isStardew = activeThemeId === "stardew";
 
   // 菜单项配置：管理员按 线路 / 分发 / 系统 分组（用户页含分组和限速），普通用户保持原样
   const menuItems: MenuItem[] = [
@@ -271,7 +275,8 @@ export default function AdminLayout({
         ${isMobile ? "fixed top-0 left-0 h-screen" : "relative h-full"}
         ${isMobile && !mobileMenuVisible ? "-translate-x-full" : "translate-x-0"}
         ${isMobile ? "w-60" : collapsed ? "w-16" : "w-56"}
-        z-50 flex flex-shrink-0 flex-col border-r border-divider bg-background
+        ${isStardew ? "stardew-sidebar" : "border-r border-divider bg-background"}
+        z-50 flex flex-shrink-0 flex-col
         transition-[width,transform] duration-200`}
       >
         {/* Logo 区域 */}
@@ -342,8 +347,11 @@ export default function AdminLayout({
           </ul>
         </nav>
 
-        {/* 底部：账号、退出、版本和折叠 */}
+        {/* 底部：星露谷配乐、账号、退出、版本和折叠 */}
         <div className="mt-auto flex flex-shrink-0 flex-col gap-1 overflow-hidden whitespace-nowrap px-3 py-3">
+          {isStardew && !isMobile && (
+            <StardewSidebarControls collapsed={collapsed} />
+          )}
           {!isMobile &&
             [
               // Password, passkeys and GitHub live on the account page.

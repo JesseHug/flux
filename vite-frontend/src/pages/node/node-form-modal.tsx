@@ -14,7 +14,6 @@ import { Switch } from "@/shadcn-bridge/heroui/switch";
 import { Alert } from "@/shadcn-bridge/heroui/alert";
 import { Accordion, AccordionItem } from "@/shadcn-bridge/heroui/accordion";
 import { Select, SelectItem } from "@/shadcn-bridge/heroui/select";
-import { type NodeRenewalCycle } from "@/pages/node/renewal";
 import { NodeForm } from "@/pages/node/types";
 import { NODE_NOTIFY_EVENTS } from "@/utils/notification-events";
 
@@ -72,74 +71,16 @@ export function NodeFormModal({
             />
 
             <Textarea
-              description="可记录供应商、用途、续费说明等补充信息"
+              description="可记录供应商、用途等补充信息"
               label="备注"
               maxRows={4}
               minRows={3}
-              placeholder="例如: 搬瓦工年付，2026-12 续费，日本中转"
+              placeholder="例如: 日本东京线路，BGP 中转"
               value={form.remark}
               variant="bordered"
               onChange={(e) =>
                 setForm((prev) => ({ ...prev, remark: e.target.value }))
               }
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select
-                label="续费周期"
-                placeholder="选择续费周期"
-                selectedKeys={form.renewalCycle ? [form.renewalCycle] : []}
-                variant="bordered"
-                onSelectionChange={(keys) => {
-                  const selected = Array.from(keys)[0] as
-                    | NodeRenewalCycle
-                    | undefined;
-
-                  setForm((prev) => ({
-                    ...prev,
-                    renewalCycle: selected || "",
-                  }));
-                }}
-              >
-                <SelectItem key="month" textValue="month">
-                  月付
-                </SelectItem>
-                <SelectItem key="quarter" textValue="quarter">
-                  季付
-                </SelectItem>
-                <SelectItem key="year" textValue="year">
-                  年付
-                </SelectItem>
-              </Select>
-            </div>
-
-            <Input
-              description="填写最近一次续费时间或周期起始时间，系统会按月/季/年自动推算下次续费"
-              errorMessage={errors.expiryTime}
-              isInvalid={!!errors.expiryTime}
-              label="续费基准时间"
-              max="9999-12-31"
-              type="date"
-              value={
-                form.expiryTime > 0
-                  ? new Date(form.expiryTime).toISOString().slice(0, 10)
-                  : ""
-              }
-              variant="bordered"
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  expiryTime: e.target.value
-                    ? new Date(e.target.value).getTime()
-                    : 0,
-                }))
-              }
-            />
-
-            <Alert
-              color="primary"
-              description="例如选择月付并填写 2026-03-01，系统会自动按每月同日推算下次续费时间。"
-              variant="flat"
             />
 
             <Input

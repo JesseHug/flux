@@ -20,6 +20,8 @@ import { getStoredValue, setStoredValue } from "@/utils/identity-storage";
 
 // ─── internal state ──────────────────────────────────────────────────────────
 
+export const DEFAULT_THEME_ID = "stardew";
+
 const installed = new Map<string, ThemePackage>();
 let activeId: string | null = null;
 let injectedStyleEl: HTMLStyleElement | null = null;
@@ -142,9 +144,11 @@ export function activateTheme(id: string): void {
     document.head.appendChild(injectedStyleEl);
   }
 
-  // Update dark class
+  // Update dark class & active theme attribute
   const root = document.documentElement;
 
+  root.setAttribute("data-flux-theme", id);
+  document.body?.setAttribute("data-flux-theme", id);
   root.classList.toggle("dark", mode === "dark");
   root.style.colorScheme = mode;
 
@@ -171,6 +175,9 @@ export function deactivateTheme(): void {
     injectedStyleEl.remove();
     injectedStyleEl = null;
   }
+
+  document.documentElement.removeAttribute("data-flux-theme");
+  document.body?.removeAttribute("data-flux-theme");
 
   activeId = null;
 }
@@ -261,6 +268,8 @@ export function initThemeSystem(): void {
 
   if (savedId && installed.has(savedId)) {
     activateTheme(savedId);
+  } else if (installed.has(DEFAULT_THEME_ID)) {
+    activateTheme(DEFAULT_THEME_ID);
   } else {
     // Just apply mode
     reapplyActiveTheme();

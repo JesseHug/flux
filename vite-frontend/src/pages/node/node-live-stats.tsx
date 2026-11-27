@@ -12,10 +12,26 @@ function bytes(v: number): string {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)}${units[i]}`;
 }
 
+function usageColorClass(v: number): string {
+  if (v >= 85) return "text-danger";
+  if (v >= 60) return "text-warning-600";
+
+  return "text-foreground";
+}
+
+function usageBarBg(v: number): string {
+  if (v >= 85) return "bg-danger";
+  if (v >= 60) return "bg-warning";
+
+  return "bg-success";
+}
+
 /**
- * A node's live resources on its list row: CPU, memory and disk, speed
- * and this month's traffic. "row" sits at the end of a wide row, "footer"
- * under the name on narrow screens.
+ * Unified internal resource telemetry bar for a node:
+ * CPU, Memory, Disk (with compact meter), real-time ↑/↓ speed, and monthly traffic.
+ * - "row": horizontal strip at the end of a wide list row
+ * - "footer": compact grid under the name on narrow screens
+ * - "card": embedded telemetry box inside a Cabin Card
  */
 export function NodeLiveStats({
   info,
@@ -25,7 +41,7 @@ export function NodeLiveStats({
   info: NodeSystemInfo | null;
   /** This month's [in, out] bytes. */
   month?: [number, number];
-  variant: "row" | "footer";
+  variant: "row" | "footer" | "card";
 }) {
   const up = info ? (info.netOutSpeed ?? info.uploadSpeed) : undefined;
   const down = info ? (info.netInSpeed ?? info.downloadSpeed) : undefined;
@@ -37,7 +53,6 @@ export function NodeLiveStats({
       : "按本地时区统计";
   const split = month ? `↑${bytes(month[1])} ↓${bytes(month[0])}` : "";
 
-  // List rows: one quiet line, and nothing for data the node has not sent.
   const usage = info
     ? (
         [
@@ -47,50 +62,124 @@ export function NodeLiveStats({
         ] as const
       ).filter(([, v]) => v !== undefined)
     : [];
-  const usageLine = usage.length > 0 && (
-    <span className="whitespace-nowrap">
-      {usage.map(([label, v], i) => (
-        <span key={label}>
-          {i > 0 && " · "}
-          {label}{" "}
-          <span
-            className={
-              v! >= 85 ? "text-danger" : v! >= 60 ? "text-warning-600" : ""
-            }
-          >
-            {Math.round(v!)}%
-          </span>
-        </span>
-      ))}
-    </span>
-  );
-  const speedLine = info && (up !== undefined || down !== undefined) && (
-    <span className="whitespace-nowrap">
-      ↑ {rate(up)} ↓ {rate(down)}
-    </span>
-  );
+
+  const speedText =
+    info && (up !== undefined || down !== undefined)
+      ? `↑ ${rate(up)} ↓ ${rate(down)}`
+      : null;
+
+  if (variant === "card") {
+    return (
+      <div className="stardew-inset space-y-2.5 p-3 text-xs tabular-nums">
+        {usage.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2.5">
+            {usage.map(([label, v]) => {
+              const pct = Math.max(0, Math.min(100, v ?? 0));
+
+              return (
+                <div key={label}>
+                  <div className="mb-1 flex items-center justify-between gap-1">
+                    <span className="text-default-500">{label}</span>
+                    <span className={`font-bold ${usageColorClass(pct)}`}>
+                      {Math.round(pct)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-xs border border-border bg-default-200/70">
+                    <div
+                      className={`h-full transition-[width] duration-300 ${usageBarBg(pct)}`}
+                      style={{ width: `${Math.max(3, pct)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="py-1 text-center text-default-400">
+            {info ? "暂无硬件占用数据" : "服务器离线 · 暂无实时占用"}
+          </div>
+        )}
+        {(speedText || month) && (
+          <div className="flex items-center justify-between gap-2 border-t border-dashed border-border pt-2">
+            <span className="truncate text-default-600">
+              {speedText ?? "网速 —"}
+            </span>
+            <span
+              className="shrink-0 font-semibold text-foreground"
+              title={month ? `${split} ${monthHint}` : undefined}
+            >
+              本月 {total}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (variant === "footer") {
-    if (!usageLine && !speedLine && !month) return null;
+    if (usage.length === 0 && !speedText && !month) return null;
 
     return (
-      <div className="flex flex-wrap gap-x-3 text-xs tabular-nums text-default-400 lg:hidden">
-        {usageLine}
-        {speedLine}
-        {month && <span title={`${split} ${monthHint}`}>本月 {total}</span>}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-default-500 lg:hidden">
+        {usage.map(([label, v]) => (
+          <span key={label} className="whitespace-nowrap">
+            {label}{" "}
+            <span className={`font-semibold ${usageColorClass(v!)}`}>
+              {Math.round(v!)}%
+            </span>
+          </span>
+        ))}
+        {speedText && <span className="whitespace-nowrap">{speedText}</span>}
+        {month && (
+          <span
+            className="whitespace-nowrap font-medium text-foreground"
+            title={`${split} ${monthHint}`}
+          >
+            本月 {total}
+          </span>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="hidden items-center gap-6 text-xs tabular-nums text-default-400 lg:flex">
-      {usageLine}
-      {speedLine}
+    <div className="hidden items-center gap-4 rounded border border-divider bg-default-50/70 px-3 py-1.5 text-xs tabular-nums lg:flex">
+      {usage.length > 0 ? (
+        <div className="flex items-center gap-3.5">
+          {usage.map(([label, v]) => {
+            const pct = Math.max(0, Math.min(100, v ?? 0));
+
+            return (
+              <div key={label} className="w-16">
+                <div className="mb-0.5 flex items-center justify-between text-[11px]">
+                  <span className="text-default-500">{label}</span>
+                  <span className={`font-semibold ${usageColorClass(pct)}`}>
+                    {Math.round(pct)}%
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-xs bg-default-200">
+                  <div
+                    className={`h-full transition-[width] duration-300 ${usageBarBg(pct)}`}
+                    style={{ width: `${Math.max(3, pct)}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <span className="w-48 text-default-400">离线 · 无实时资源</span>
+      )}
+      {speedText && (
+        <span className="w-36 truncate whitespace-nowrap text-default-600">
+          {speedText}
+        </span>
+      )}
       <span
-        className="w-24 text-right text-sm text-foreground"
-        title={`${split} ${monthHint}`}
+        className="w-20 text-right font-semibold text-foreground"
+        title={month ? `${split} ${monthHint}` : undefined}
       >
-        {month ? total : "—"}
+        {month ? `本月 ${total}` : "—"}
       </span>
     </div>
   );

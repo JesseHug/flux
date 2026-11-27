@@ -7,6 +7,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack enable pnpm && pnpm install --frozen-lockfile
 
 COPY . .
+RUN pnpm run stardew:assets || true
 RUN pnpm run build
 
 # 生产阶段

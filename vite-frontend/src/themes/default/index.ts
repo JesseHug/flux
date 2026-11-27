@@ -14,10 +14,10 @@ import type { ThemePackage } from "../types";
 
 const defaultTheme: ThemePackage = {
   id: "default",
-  name: "默认主题",
+  name: "极简经典",
   author: "FLUX Team",
   version: "1.0.0",
-  description: "FLUX 内置默认极简黑白主题",
+  description: "FLUX 原版极简黑白主题",
 
   tokens: {
     light: {

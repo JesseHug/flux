@@ -43,6 +43,7 @@ jobs:
         run: |
           npm install -g pnpm@10.28.1
           pnpm install --frozen-lockfile
+          pnpm run stardew:assets || true
           VITE_DEMO=true VITE_BASE=/flux/demo/ \
           VITE_APP_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" \
           VITE_GITHUB_REPO="https://github.com/${{ github.repository }}" \

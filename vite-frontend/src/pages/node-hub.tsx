@@ -9,6 +9,8 @@ import { PageHeader, PageTabs } from "@/components/page-kit";
 import NodePage from "@/pages/node";
 import { KernelsTab } from "@/pages/node/kernels-tab";
 import { NodeMonitorDetail } from "@/pages/monitor";
+import { useThemeContext } from "@/themes/context";
+import { StardewFarmHero } from "@/themes/stardew/components/farm-hero";
 
 type NodeTab = "nodes" | "kernels";
 
@@ -32,6 +34,8 @@ function readTab(): NodeTab {
 
 /** Servers and the kernels installed on them. */
 export default function NodeHubPage() {
+  const { activeThemeId } = useThemeContext();
+  const isStardew = activeThemeId === "stardew";
   const location = useLocation();
   const navigate = useNavigate();
   const state = (location.state ?? {}) as NodeHubState;
@@ -61,6 +65,9 @@ export default function NodeHubPage() {
 
   return (
     <AnimatedPage className="px-4 py-6 lg:px-10 lg:py-8">
+      {isStardew && tab === "nodes" && monitorNode === null && (
+        <StardewFarmHero />
+      )}
       <PageHeader
         description={
           tab === "kernels"

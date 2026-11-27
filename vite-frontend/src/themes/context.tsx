@@ -17,6 +17,7 @@ import React, {
 } from "react";
 
 import {
+  DEFAULT_THEME_ID,
   subscribe,
   getActiveTheme,
   getActiveThemeId,
@@ -120,9 +121,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const switchTheme = useCallback((id: string) => activateTheme(id), []);
   const resetTheme = useCallback(() => {
-    deactivateTheme();
-    reapplyActiveTheme();
-    removeStoredValue(localStorage, "flux:active-theme");
+    if (getRegisteredThemes().some((t) => t.id === DEFAULT_THEME_ID)) {
+      activateTheme(DEFAULT_THEME_ID);
+    } else {
+      deactivateTheme();
+      reapplyActiveTheme();
+      removeStoredValue(localStorage, "flux:active-theme");
+    }
   }, []);
   const setMode = useCallback((m: ThemeMode) => {
     saveMode(m);

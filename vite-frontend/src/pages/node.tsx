@@ -31,13 +31,9 @@ import {
   getNodeReleases,
   rollbackNode,
   getPeerRemoteUsageList,
-  dismissNodeExpiryReminder,
-  probeNodeLatency,
   getNodeMonthTraffic,
   type ReleaseChannel,
 } from "@/api";
-import { RouteModal } from "@/components/route-modal";
-import { LatencyTrendModal } from "@/components/lazy-charts";
 import { PageLoadingState } from "@/components/page-state";
 import { ActionSheet } from "@/components/action-sheet";
 import {
@@ -52,10 +48,6 @@ import {
 import { getRemoteSyncErrorMessage } from "@/pages/node/display";
 import { NodeTuneModal } from "@/pages/node/tune-modal";
 import { copyWithToast } from "@/utils/clipboard";
-import {
-  formatNodeRenewalTime,
-  getNodeRenewalCycleLabel,
-} from "@/pages/node/renewal";
 import { useNodeOfflineTimers } from "@/pages/node/use-node-offline-timers";
 import { applyNodeRealtimeBatch } from "@/pages/node/realtime-state";
 import {
@@ -68,21 +60,10 @@ import {
   useCachedState,
 } from "@/hooks/use-cached-state";
 import { useVisiblePolling } from "@/hooks/use-visible-polling";
-import { latestProbe } from "@/utils/latest-probe";
 import { useLocalStorageState } from "@/hooks/use-local-storage-state";
 import { loadStoredOrder, saveOrder } from "@/utils/order-storage";
-import {
-  Node,
-  NodeForm,
-  NodeTab,
-  RemoteUsageNode,
-  NodeFilterMode,
-} from "@/pages/node/types";
-import {
-  getNodeReminderEnabled,
-  getNodeExpiryMeta,
-  mergeNodeRealtimeState,
-} from "@/pages/node/helpers";
+import { Node, NodeForm, NodeTab, RemoteUsageNode } from "@/pages/node/types";
+import { mergeNodeRealtimeState } from "@/pages/node/helpers";
 import { NodeFormModal } from "@/pages/node/node-form-modal";
 import {
   BatchDeleteNodesModal,
@@ -94,10 +75,14 @@ import {
   type InstallCommands,
   UpgradeNodeModal,
 } from "@/pages/node/agent-modals";
-import { NodeFilterModal } from "@/pages/node/filter-modal";
 import { NodeRow } from "@/pages/node/node-row";
+import { NodeCabinCard } from "@/pages/node/node-cabin-card";
 import { formatSpeed, formatUptime, formatFlow } from "@/pages/node/format";
 import { useWideNodeLayout } from "@/pages/node/use-wide-node-layout";
+import { useThemeContext } from "@/themes/context";
+import { cabinLabel } from "@/themes/stardew/assets";
+import { HousePickerModal } from "@/themes/stardew/components/house-picker-modal";
+import { useStardewEnv } from "@/themes/stardew/env-context";
 
 // IPv4/IPv6 格式验证（仅用于判定地址族）
 const ipv4Regex =
@@ -162,9 +147,11 @@ export default function NodePage({
   const [remoteUsageMap, setRemoteUsageMap] = useState<
     Record<number, RemoteUsageNode>
   >({});
-  const [nodeFilterMode, setNodeFilterMode, resetNodeFilterMode] =
-    useLocalStorageState<NodeFilterMode>("node-expiry-filter-mode", "all");
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const { activeThemeId } = useThemeContext();
+  const { nodeViewMode, setNodeViewMode, getNodeCabin, setNodeCabin } =
+    useStardewEnv();
+  const isStardew = activeThemeId === "stardew";
+  const [pickerNode, setPickerNode] = useState<Node | null>(null);
   const [dialogVisible, setDialogVisible] = useState(false);
   const [dialogTitle, setDialogTitle] = useState("");
   const [isEdit, setIsEdit] = useState(false);
@@ -217,9 +204,6 @@ export default function NodePage({
 
   const [selectMode, setSelectMode] = useState(false);
   const [sheetNodeId, setSheetNodeId] = useState<number | null>(null);
-  const [probingIds, setProbingIds] = useState<Set<number>>(new Set());
-  const [routeNode, setRouteNode] = useState<Node | null>(null);
-  const [trendNode, setTrendNode] = useState<Node | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchDeleteModalOpen, setBatchDeleteModalOpen] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
@@ -551,13 +535,6 @@ export default function NodePage({
       newErrors.name = "服务器名称长度不能超过50位";
     }
 
-    if (
-      (form.renewalCycle && !form.expiryTime) ||
-      (!form.renewalCycle && form.expiryTime)
-    ) {
-      newErrors.expiryTime = "请同时设置续费周期和续费基准时间";
-    }
-
     const v4 = form.serverIpV4.trim();
     const v6 = form.serverIpV6.trim();
     const host = form.serverHost.trim();
@@ -734,24 +711,6 @@ export default function NodePage({
       setDeleteLoading(false);
     }
   };
-
-  const handleDismissExpiryReminder = useCallback(async (nodeId: number) => {
-    try {
-      const res = await dismissNodeExpiryReminder(nodeId);
-
-      if (res.code === 0) {
-        setNodeList((prev) =>
-          prev.map((n) =>
-            n.id === nodeId ? { ...n, expiryReminderDismissed: 1 } : n,
-          ),
-        );
-      } else {
-        toast.error(res.msg || "操作失败");
-      }
-    } catch {
-      toast.error("网络错误，请重试");
-    }
-  }, []);
 
   // Only the stable channel is published, so there is nothing to choose.
 
@@ -1060,36 +1019,6 @@ export default function NodePage({
   };
 
   // 处理拖拽结束
-  // Probes one node's latency again and patches its result in place.
-  const probeNode = useCallback(async (id: number) => {
-    setProbingIds((prev) => new Set(prev).add(id));
-    try {
-      const res = await probeNodeLatency([id]);
-      const latency = res.code === 0 ? res.data?.[String(id)] : undefined;
-
-      if (!latency) {
-        toast.error(res.msg || "检测失败");
-
-        return;
-      }
-      setNodeList((prev) =>
-        prev.map((n) =>
-          n.id === id ? { ...n, latency: latestProbe(latency, n.latency) } : n,
-        ),
-      );
-    } catch {
-      toast.error("检测失败");
-    } finally {
-      setProbingIds((prev) => {
-        const next = new Set(prev);
-
-        next.delete(id);
-
-        return next;
-      });
-    }
-  }, []);
-
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
@@ -1217,27 +1146,6 @@ export default function NodePage({
     useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
   );
 
-  const nodeExpiryStats = useMemo(() => {
-    return nodeList.reduce(
-      (acc, node) => {
-        if (node.isRemote === 1) {
-          return acc;
-        }
-
-        const meta = getNodeExpiryMeta(node.expiryTime, node.renewalCycle);
-
-        if (meta.state === "expired") acc.expired += 1;
-        if (meta.state === "expiringSoon") acc.expiringSoon += 1;
-        if (getNodeReminderEnabled(node)) {
-          acc.withExpiry += 1;
-        }
-
-        return acc;
-      },
-      { expired: 0, expiringSoon: 0, withExpiry: 0 },
-    );
-  }, [nodeList]);
-
   // 根据排序顺序获取节点列表
   const sortedNodes = useMemo((): Node[] => {
     if (!nodeList || nodeList.length === 0) return [];
@@ -1307,31 +1215,10 @@ export default function NodePage({
     [sortedNodes],
   );
 
-  const filteredLocalNodes = useMemo(() => {
-    const keywordFiltered = filterNodesByKeyword(
-      localNodes,
-      localSearchKeyword,
-    );
-
-    if (nodeFilterMode === "all") {
-      return keywordFiltered;
-    }
-
-    return keywordFiltered.filter((node) => {
-      const expiryMeta = getNodeExpiryMeta(node.expiryTime, node.renewalCycle);
-
-      switch (nodeFilterMode) {
-        case "expiringSoon":
-          return expiryMeta.state === "expiringSoon";
-        case "expired":
-          return expiryMeta.state === "expired";
-        case "withExpiry":
-          return getNodeReminderEnabled(node);
-        default:
-          return true;
-      }
-    });
-  }, [filterNodesByKeyword, localNodes, localSearchKeyword, nodeFilterMode]);
+  const filteredLocalNodes = useMemo(
+    () => filterNodesByKeyword(localNodes, localSearchKeyword),
+    [filterNodesByKeyword, localNodes, localSearchKeyword],
+  );
 
   const filteredRemoteNodes = useMemo(
     () => filterNodesByKeyword(remoteNodes, remoteSearchKeyword),
@@ -1350,11 +1237,8 @@ export default function NodePage({
   );
 
   const canBatchUpgrade = activeTab === "local";
-  const canUseExpiryFilter = activeTab === "local";
   const hasKeywordSearch = currentSearchKeyword.trim().length > 0;
-  const hasActiveFilters = nodeFilterMode !== "all";
-  const isDisplayFiltered =
-    hasKeywordSearch || (canUseExpiryFilter && hasActiveFilters);
+  const isDisplayFiltered = hasKeywordSearch;
 
   const sortableNodeIds = useMemo(
     () => displayNodes.map((n) => n.id),
@@ -1365,12 +1249,10 @@ export default function NodePage({
   const rowActions = useMemo(
     () => ({
       toggleSelect,
-      probeNode,
       setSheetNodeId,
-      setRouteNode,
-      setTrendNode,
+      onPickCabin: (n: Node) => setPickerNode(n),
     }),
-    [toggleSelect, probeNode, setSheetNodeId, setRouteNode, setTrendNode],
+    [toggleSelect, setSheetNodeId],
   );
 
   return (
@@ -1444,12 +1326,14 @@ export default function NodePage({
           search={currentSearchKeyword}
           onSearch={setCurrentSearchKeyword}
         >
-          {canUseExpiryFilter && (
+          {isStardew && (
             <ToolbarButton
-              active={nodeFilterMode !== "all"}
-              onPress={() => setIsFilterModalOpen(true)}
+              active={nodeViewMode === "cabin"}
+              onPress={() =>
+                setNodeViewMode(nodeViewMode === "cabin" ? "strip" : "cabin")
+              }
             >
-              {nodeFilterMode !== "all" ? "已筛选" : "筛选"}
+              {nodeViewMode === "cabin" ? "紧凑单栏" : "小屋卡片"}
             </ToolbarButton>
           )}
         </PageToolbar>
@@ -1494,22 +1378,38 @@ export default function NodePage({
             items={sortableNodeIds}
             strategy={rectSortingStrategy}
           >
-            <div className="flex flex-col">
-              {displayNodes.map((node) => (
-                <NodeRow
-                  key={node.id}
-                  actions={rowActions}
-                  isDisplayFiltered={isDisplayFiltered}
-                  month={monthTraffic[String(node.id)]}
-                  node={node}
-                  probing={probingIds.has(node.id)}
-                  progress={upgradeProgress[node.id]}
-                  selectMode={selectMode}
-                  selected={selectedIds.has(node.id)}
-                  wide={wide}
-                />
-              ))}
-            </div>
+            {isStardew && nodeViewMode === "cabin" ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {displayNodes.map((node) => (
+                  <NodeCabinCard
+                    key={node.id}
+                    actions={rowActions}
+                    isDisplayFiltered={isDisplayFiltered}
+                    month={monthTraffic[String(node.id)]}
+                    node={node}
+                    progress={upgradeProgress[node.id]}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(node.id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {displayNodes.map((node) => (
+                  <NodeRow
+                    key={node.id}
+                    actions={rowActions}
+                    isDisplayFiltered={isDisplayFiltered}
+                    month={monthTraffic[String(node.id)]}
+                    node={node}
+                    progress={upgradeProgress[node.id]}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(node.id)}
+                    wide={wide}
+                  />
+                ))}
+              </div>
+            )}
           </SortableContext>
         </DndContext>
       )}
@@ -1520,9 +1420,6 @@ export default function NodePage({
         const online = node?.connectionStatus === "online";
         const usage = node ? remoteUsageMap[node.id] : undefined;
         const progress = node ? upgradeProgress[node.id] : undefined;
-        const expiryMeta = node
-          ? getNodeExpiryMeta(node.expiryTime, node.renewalCycle)
-          : null;
         const close = () => setSheetNodeId(null);
         const rows: Array<[string, React.ReactNode]> = node
           ? isRemoteNode
@@ -1561,15 +1458,10 @@ export default function NodePage({
                       ["已运行", formatUptime(node.systemInfo.uptime)],
                     ] as Array<[string, React.ReactNode]>)
                   : []),
-                ...(node.expiryTime && node.renewalCycle && expiryMeta
-                  ? ([
-                      [
-                        "续费",
-                        `${expiryMeta.label} · ${formatNodeRenewalTime(
-                          expiryMeta.nextDueTime,
-                        )}（${getNodeRenewalCycleLabel(node.renewalCycle)}）`,
-                      ],
-                    ] as Array<[string, React.ReactNode]>)
+                ...(isStardew
+                  ? ([["小屋外观", cabinLabel(getNodeCabin(node.id))]] as Array<
+                      [string, React.ReactNode]
+                    >)
                   : []),
               ]
           : [];
@@ -1605,6 +1497,15 @@ export default function NodePage({
                         color: "primary" as const,
                         onPress: () => openInstallSelector(node),
                       },
+                      ...(isStardew
+                        ? [
+                            {
+                              key: "cabin",
+                              label: "更换小屋",
+                              onPress: () => setPickerNode(node),
+                            },
+                          ]
+                        : []),
                       ...(node.forwardMode !== "lite" &&
                       node.forwardMode !== "nftables"
                         ? [
@@ -1633,19 +1534,6 @@ export default function NodePage({
                         disabled: !online,
                         onPress: () => handleRollbackNode(node),
                       },
-                      ...(node.expiryTime &&
-                      node.renewalCycle &&
-                      !node.expiryReminderDismissed &&
-                      expiryMeta?.isHighlighted
-                        ? [
-                            {
-                              key: "dismiss",
-                              label: "关闭到期提醒",
-                              onPress: () =>
-                                handleDismissExpiryReminder(node.id),
-                            },
-                          ]
-                        : []),
                       {
                         key: "delete",
                         label: "删除",
@@ -1765,24 +1653,15 @@ export default function NodePage({
         setBatchDeleteModalOpen={setBatchDeleteModalOpen}
       />
 
-      <NodeFilterModal
-        isFilterModalOpen={isFilterModalOpen}
-        nodeExpiryStats={nodeExpiryStats}
-        nodeFilterMode={nodeFilterMode}
-        resetNodeFilterMode={resetNodeFilterMode}
-        setIsFilterModalOpen={setIsFilterModalOpen}
-        setNodeFilterMode={setNodeFilterMode}
-      />
-      <RouteModal
-        nodeId={routeNode?.id ?? null}
-        nodeName={routeNode?.name}
-        onClose={() => setRouteNode(null)}
-      />
-      <LatencyTrendModal
-        nodeId={trendNode?.id ?? null}
-        nodeName={trendNode?.name}
-        onClose={() => setTrendNode(null)}
-      />
+      {pickerNode && (
+        <HousePickerModal
+          currentCabinId={getNodeCabin(pickerNode.id)}
+          isOpen={Boolean(pickerNode)}
+          serverName={pickerNode.name}
+          onClose={() => setPickerNode(null)}
+          onSelect={(cabinId) => setNodeCabin(pickerNode.id, cabinId)}
+        />
+      )}
     </PageShell>
   );
 }
